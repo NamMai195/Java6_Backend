@@ -22,6 +22,19 @@ springdoc:
     enabled: true
   swagger-ui:
     enabled: true
+brevo:
+  api-key: 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
+app:
+  email:
+    defaults:
+      login-link: https://my-app.com/login
+      service-name: My Application
+      company-name: My Company Inc.
+      company-address: 456 Tech Road, Silicon Valley
+      support-phone: 1-800-SUPPORT
+      faq-link: https://my-app.com/faq
+      policy-link: https://my-app.com/policy
+      company-slogan: Innovating the Future
 openapi:
   service:
     api-docs: backend-service

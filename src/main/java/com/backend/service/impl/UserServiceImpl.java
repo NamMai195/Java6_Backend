@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.InvalidIsolationLevelException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
@@ -91,6 +92,13 @@ public class UserServiceImpl implements UserService {
     @Transactional(rollbackFor = Exception.class)
     public long save(UserCreationRequest req) {
         log.info("Saving user {}", req);
+
+        UserEntity userByEmail= userRepository.findByEmail(req.getEmail());
+
+        if (userByEmail !=null){
+            throw new InvalidIsolationLevelException("Email already exists");
+        }
+
         UserEntity user = new UserEntity();
         user.setFirstName(req.getFirstName());
         user.setLastName(req.getLastName());
