@@ -30,6 +30,7 @@ public class UserController {
 
     @Operation(summary = "Get User List", description = "API get user from db")
     @GetMapping("/list")
+
     public Map<String, Object> getList(@RequestParam(required = false) String keyword,
                                        @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "20") int size) {
         log.info("Get User List");

@@ -4,7 +4,6 @@ import com.backend.common.UserStatus;
 import com.backend.controller.request.UserCreationRequest;
 import com.backend.controller.request.UserPasswordRequest;
 import com.backend.controller.request.UserUpdateRequest;
-import com.backend.controller.response.UserPageReponse;
 import com.backend.controller.response.UserResponse;
 import com.backend.exception.ResourceNotFoundException;
 import com.backend.model.AddressEntity;
@@ -34,18 +33,19 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
 
     @Override
-    public UserPageReponse findAll(String keyword, int page, int size) {
+    public List<UserResponse> findAll(String keyword, int page, int size) {
         PageRequest pageable = PageRequest.of(page, size);
         Page<UserEntity> userPage;
 
         if (keyword != null && !keyword.isEmpty()) {
             // Tìm kiếm theo keyword (ví dụ: tên, email, phone)
-            userPage = userRepository.findByFirstNameContainingOrLastNameContainingOrEmailContainingOrPhoneContainingOrUsernameContaining(keyword, keyword, keyword, keyword, keyword, pageable);
-        } else {
-            // Lấy tất cả người dùng
-            userPage = userRepository.findAll(pageable);
+            userPage = userRepository.findByFirstNameContainingOrLastNameContainingOrEmailContainingOrPhoneContainingOrUsernameContainingAndStatus(keyword, keyword, keyword, keyword, keyword,UserStatus.ACTIVE, pageable);
+        }else {
+            // Lấy tất cả người dùng có trạng thái ACTIVE (thay đổi ở đây)
+            userPage = userRepository.findByStatus(UserStatus.ACTIVE, pageable); // thay đổi
         }
-        List<UserResponse> userResponses = userPage.getContent().stream()
+
+        return userPage.getContent().stream()
                 .map(userEntity -> UserResponse.builder()
                         .id(userEntity.getId())
                         .firstName(userEntity.getFirstName())
@@ -57,15 +57,6 @@ public class UserServiceImpl implements UserService {
                         .email(userEntity.getEmail())
                         .build())
                 .collect(Collectors.toList());
-
-        return UserPageReponse.builder()
-                .pageNumber(userPage.getNumber())
-                .pageSize(userPage.getSize())
-                .totalElements(userPage.getTotalElements())
-                .totalPages(userPage.getTotalPages())
-                .isLast(userPage.isLast())
-                .build();
-
     }
 
     @Override
