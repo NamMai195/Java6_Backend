@@ -25,11 +25,13 @@ springdoc:
 brevo:
   api-key: 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
 app:
+  base-url: http://localhost:8080 # URL gốc của ứng dụng của bạn (quan trọng cho link xác thực)
   email:
+    verification-template-id: 3  # **QUAN TRỌNG**: Thay bằng ID template xác thực thực tế của bạn trên Brevo
     defaults:
       login-link: https://my-app.com/login
-      service-name: My Application
-      company-name: My Company Inc.
+      service-name: My Application # Tên ứng dụng của bạn
+      company-name: My Company Inc. # Tên công ty
       company-address: 456 Tech Road, Silicon Valley
       support-phone: 1-800-SUPPORT
       faq-link: https://my-app.com/faq

@@ -1,9 +1,14 @@
 package com.backend.controller.response;
 
 import com.backend.common.Gender;
+import com.backend.common.UserStatus; // Import
+import com.backend.common.UserType;   // Import
 import lombok.*;
 
 import java.util.Date;
+// Import thêm nếu muốn trả về cả Address
+// import java.util.List;
+// import com.backend.controller.response.AddressResponse; // Giả sử có AddressResponse
 
 @Getter
 @Setter
@@ -19,4 +24,8 @@ public class UserResponse {
     private String username;
     private String email;
     private String phone;
+    // --- Thêm các trường ---
+    private UserType type;
+    private UserStatus status;
+    // private List<AddressResponse> addresses; // Tùy chọn: trả về danh sách địa chỉ
 }

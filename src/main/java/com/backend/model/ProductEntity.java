@@ -9,6 +9,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Set;
 
 @Entity
@@ -38,8 +39,9 @@ public class ProductEntity {
     @Column(nullable = false, name = "stock_quantity")
     private Integer stockQuantity = 0; // Mặc định là 0
 
-    @Column(name = "image_url", length = 500)
-    private String imageUrl;
+    // Quan hệ Một-Nhiều tới ProductImageEntity
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private Set<ProductImageEntity> images = new HashSet<>();
 
     // Quan hệ nhiều-một với CategoryEntity
     @ManyToOne(fetch = FetchType.LAZY)
@@ -67,4 +69,22 @@ public class ProductEntity {
     @Temporal(TemporalType.TIMESTAMP)
     @UpdateTimestamp
     private Date updatedAt;
+
+    public Set<ProductImageEntity> getImages() {
+        if (this.images == null) {
+            this.images = new HashSet<>();
+        }
+        return images;
+    }
+
+    // Helper method để thêm ảnh (tùy chọn)
+    public void addImage(ProductImageEntity image) {
+        getImages().add(image);
+        image.setProduct(this);
+    }
+
+    public void removeImage(ProductImageEntity image) {
+        getImages().remove(image);
+        image.setProduct(null);
+    }
 }
