@@ -2,13 +2,15 @@ package com.backend.controller;
 
 import com.backend.controller.request.ReviewRequest;
 import com.backend.controller.response.ReviewResponse;
+import com.backend.model.UserEntity;
 import com.backend.service.ReviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+// Import nếu cần SecurityRequirement
+// import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
@@ -17,9 +19,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort; // Import Sort nếu cần sort
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize; // Ví dụ phân quyền
+// **THÊM IMPORT CHO PHÂN QUYỀN VÀ SECURITY CONTEXT**
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+// Import Principal/UserDetails nếu cần
+// import com.backend.model.UserEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -28,7 +35,7 @@ import java.net.URI;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/v1") // Base path chung, các endpoint sẽ có /products/.../reviews hoặc /reviews/...
+@RequestMapping("/api/v1")
 @Tag(name = "Review API v1", description = "APIs for managing product reviews")
 @RequiredArgsConstructor
 @Validated
@@ -36,31 +43,40 @@ public class ReviewController {
 
     private final ReviewService reviewService;
 
-    // --- Helper method để lấy User ID ---
-    // !!! Quan trọng: Thay thế bằng logic lấy User ID thực tế !!!
+    // --- Helper lấy User ID (Ví dụ - Cần điều chỉnh theo Principal thực tế) ---
     private Long getCurrentUserId() {
-        log.warn("!!! Using hardcoded User ID 1 for Review operations. Replace with actual principal extraction. !!!");
-        return 1L; // <<<< THAY THẾ LOGIC THỰC TẾ
-        // throw new IllegalStateException("User ID could not be determined.");
-    }
-    // -----------------------------------
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
-    @Operation(summary = "Get Reviews for Product", description = "Retrieves reviews for a specific product with pagination.",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Reviews retrieved successfully"),
-                    @ApiResponse(responseCode = "404", description = "Product not found", content = @Content)
-            })
+        if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
+            log.error("User not authenticated for this operation.");
+            throw new IllegalStateException("User must be authenticated to perform this operation.");
+        }
+
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof UserEntity) {
+            UserEntity currentUser = (UserEntity) principal;
+            // log.debug("Authenticated User ID: {}", currentUser.getId()); // Bỏ log debug nếu không cần
+            return currentUser.getId(); // Trả về ID thực sự
+        } else {
+            // Nếu principal không phải là UserEntity, báo lỗi
+            log.error("Could not determine User ID from principal type: {}", principal.getClass().getName());
+            throw new IllegalStateException("Could not determine User ID from principal.");
+        }
+    }
+    // ------------------------------------------------------------------------
+
+
+    @Operation(summary = "Get Reviews for Product", description = "Retrieves reviews for a specific product with pagination.")
     @GetMapping("/products/{productId}/reviews")
+    // Mọi người dùng đã đăng nhập đều có thể xem reviews
     public ResponseEntity<Page<ReviewResponse>> getReviewsByProduct(
-            @Parameter(description = "ID of the product to get reviews for", required = true)
             @PathVariable @Min(1) Long productId,
-            @Parameter(description = "Page number (0-indexed)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Number of reviews per page") @RequestParam(defaultValue = "10") int size,
-            @Parameter(description = "Sort criteria (e.g., 'createdAt,desc' or 'rating,asc')")
-            @RequestParam(defaultValue = "createdAt,desc") String sort) { // Ví dụ thêm sort
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt,desc") String sort) {
 
         log.info("Request received to get reviews for product ID: {}, page: {}, size: {}, sort: {}", productId, page, size, sort);
-        // Xử lý Sort
         String[] sortParams = sort.split(",");
         Sort sortOrder = Sort.by(Sort.Direction.fromString(sortParams[1]), sortParams[0]);
         Pageable pageable = PageRequest.of(page, size, sortOrder);
@@ -69,26 +85,18 @@ public class ReviewController {
         return ResponseEntity.ok(reviews);
     }
 
-    @Operation(summary = "Create Review", description = "Adds a new review for a product by the current user. User can only review a product once.",
-            responses = {
-                    @ApiResponse(responseCode = "201", description = "Review created successfully",
-                            content = @Content(schema = @Schema(implementation = ReviewResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid input (e.g., rating out of range, already reviewed)", content = @Content),
-                    @ApiResponse(responseCode = "401", description = "Unauthorized", content = @Content),
-                    @ApiResponse(responseCode = "404", description = "Product or User not found", content = @Content)
-            })
+    @Operation(summary = "Create Review", description = "Adds a new review for a product by the current user.")
     @PostMapping("/products/{productId}/reviews")
-    // @SecurityRequirement(name = "bearerAuth") // Yêu cầu đăng nhập
+    // Mọi người dùng đã đăng nhập đều có thể tạo review (USER hoặc ADMIN)
+    // @SecurityRequirement(name = "bearerAuth") // Đánh dấu yêu cầu token
     public ResponseEntity<ReviewResponse> createReview(
-            @Parameter(description = "ID of the product being reviewed", required = true)
             @PathVariable @Min(1) Long productId,
             @Valid @RequestBody ReviewRequest request) {
         Long userId = getCurrentUserId();
         log.info("User ID {} attempting to create review for product ID: {} with rating {}", userId, productId, request.getRating());
         ReviewResponse createdReview = reviewService.createReview(userId, productId, request);
-        // Tạo URI cho resource mới
         URI location = ServletUriComponentsBuilder
-                .fromCurrentContextPath().path("/api/v1/reviews/{id}") // Trỏ đến API lấy chi tiết review
+                .fromCurrentContextPath().path("/api/v1/reviews/{id}")
                 .buildAndExpand(createdReview.getReviewId())
                 .toUri();
         log.info("Review created successfully with ID: {}", createdReview.getReviewId());
@@ -96,8 +104,8 @@ public class ReviewController {
     }
 
     @Operation(summary = "Get Review by ID", description = "Retrieves details for a specific review.")
-    // API này có thể public hoặc private tùy yêu cầu
     @GetMapping("/reviews/{reviewId}")
+    // Mọi người dùng đã đăng nhập đều có thể xem review chi tiết
     public ResponseEntity<ReviewResponse> getReviewById(
             @PathVariable @Min(1) Long reviewId) {
         log.info("Request received to get review details for ID: {}", reviewId);
@@ -106,41 +114,36 @@ public class ReviewController {
     }
 
 
-    @Operation(summary = "Update Review", description = "Updates an existing review written by the current user.",
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "Review updated successfully",
-                            content = @Content(schema = @Schema(implementation = ReviewResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid input", content = @Content),
-                    @ApiResponse(responseCode = "401", description = "Unauthorized", content = @Content),
-                    @ApiResponse(responseCode = "403", description = "Forbidden (User does not own this review)", content = @Content),
-                    @ApiResponse(responseCode = "404", description = "Review not found", content = @Content)
-            })
+    @Operation(summary = "Update Review", description = "Updates an existing review (Owner or ADMIN)")
     @PutMapping("/reviews/{reviewId}")
+    // **PHÂN QUYỀN: Chỉ ADMIN hoặc người sở hữu mới được sửa**
+    // Tạm thời chỉ cho ADMIN. Cần bổ sung logic kiểm tra quyền sở hữu sau.
+    @PreAuthorize("hasRole('ADMIN')")
+    // @PreAuthorize("hasRole('ADMIN') or @reviewServiceImpl.isOwner(#reviewId, principal.id)") // Cách nâng cao
     // @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<ReviewResponse> updateReview(
             @PathVariable @Min(1) Long reviewId,
             @Valid @RequestBody ReviewRequest request) {
-        Long userId = getCurrentUserId();
-        log.info("User ID {} attempting to update review ID: {}", userId, reviewId);
+        Long userId = getCurrentUserId(); // Lấy userId hiện tại để service kiểm tra quyền sở hữu (nếu không dùng SpEL phức tạp)
+        log.info("User ID {} (or Admin) attempting to update review ID: {}", userId, reviewId);
+        // Service sẽ cần kiểm tra userId này có phải là chủ review không (nếu không phải ADMIN)
         ReviewResponse updatedReview = reviewService.updateReview(reviewId, userId, request);
         return ResponseEntity.ok(updatedReview);
     }
 
 
-    @Operation(summary = "Delete Review", description = "Deletes a review. Can only be done by the user who wrote it or an admin.",
-            responses = {
-                    @ApiResponse(responseCode = "204", description = "Review deleted successfully", content = @Content),
-                    @ApiResponse(responseCode = "401", description = "Unauthorized", content = @Content),
-                    @ApiResponse(responseCode = "403", description = "Forbidden (User does not own this review and is not Admin)", content = @Content),
-                    @ApiResponse(responseCode = "404", description = "Review not found", content = @Content)
-            })
+    @Operation(summary = "Delete Review", description = "Deletes a review (Owner or ADMIN)")
     @DeleteMapping("/reviews/{reviewId}")
+    // **PHÂN QUYỀN: Chỉ ADMIN hoặc người sở hữu mới được xóa**
+    // Tạm thời chỉ cho ADMIN. Cần bổ sung logic kiểm tra quyền sở hữu sau.
+    @PreAuthorize("hasRole('ADMIN')")
+    // @PreAuthorize("hasRole('ADMIN') or @reviewServiceImpl.isOwner(#reviewId, principal.id)") // Cách nâng cao
     // @SecurityRequirement(name = "bearerAuth")
     public ResponseEntity<Void> deleteReview(
             @PathVariable @Min(1) Long reviewId) {
-        Long userId = getCurrentUserId(); // Lấy ID user để kiểm tra quyền hoặc xác định admin
+        Long userId = getCurrentUserId(); // Lấy userId hiện tại để service kiểm tra quyền sở hữu (nếu không phải ADMIN)
         log.info("User ID {} (or Admin) attempting to delete review ID: {}", userId, reviewId);
-        // Service sẽ kiểm tra quyền sở hữu hoặc quyền Admin bên trong
+        // Service sẽ cần kiểm tra userId này có phải là chủ review không (nếu không phải ADMIN)
         reviewService.deleteReview(reviewId, userId);
         return ResponseEntity.noContent().build();
     }

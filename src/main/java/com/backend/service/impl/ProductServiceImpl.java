@@ -13,14 +13,17 @@ import com.backend.repository.CategoryRepository;
 import com.backend.repository.ProductImageRepository; // Import ProductImageRepository
 import com.backend.repository.ProductRepository;
 import com.backend.service.ProductService;
+import com.backend.specification.ProductSpecification;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils; // Import CollectionUtils
 
+import java.math.BigDecimal;
 import java.util.ArrayList; // Import ArrayList
 import java.util.Collections; // Import Collections
 import java.util.List;
@@ -142,17 +145,39 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<ProductResponse> getAllProducts(Pageable pageable) {
-        log.info("Fetching all products for page {} size {}", pageable.getPageNumber(), pageable.getPageSize());
-        Page<ProductEntity> productPage = productRepository.findAll(pageable);
+    public Page<ProductResponse> getAllProducts(String keyword, Long categoryId, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable) {
 
-        List<ProductResponse> productResponses = productPage.getContent().stream()
-                .map(this::mapToProductResponse) // Hàm map đã xử lý ảnh
-                .collect(Collectors.toList());
+        log.info("Fetching products with filters - keyword: [{}], categoryId: [{}], minPrice: [{}], maxPrice: [{}], page: {}, size: {}",
+                keyword, categoryId, minPrice, maxPrice, pageable.getPageNumber(), pageable.getPageSize());
 
-        log.info("Found {} products on page {}", productResponses.size(), pageable.getPageNumber());
-        return productResponses;
+        // Xây dựng Specification dựa trên các tham số lọc
+        Specification<ProductEntity> spec = Specification.where(null);
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            spec = spec.and(ProductSpecification.hasKeyword(keyword.trim()));
+        }
+        if (categoryId != null) {
+            spec = spec.and(ProductSpecification.hasCategory(categoryId));
+        }
+        if (minPrice != null) {
+            spec = spec.and(ProductSpecification.hasMinPrice(minPrice));
+        }
+        if (maxPrice != null) {
+            spec = spec.and(ProductSpecification.hasMaxPrice(maxPrice));
+        }
+
+        // Gọi Repository với Specification và Pageable
+        // LƯU Ý: ProductRepository cần phải extends JpaSpecificationExecutor<ProductEntity, Long>
+        Page<ProductEntity> productPage = productRepository.findAll(spec, pageable);
+
+        // Chuyển đổi Page<ProductEntity> sang Page<ProductResponse> dùng hàm map của Page
+        Page<ProductResponse> productResponsePage = productPage.map(this::mapToProductResponse);
+
+        log.info("Found {} products matching criteria. Total pages: {}, Total elements: {}",
+                productResponsePage.getNumberOfElements(), productResponsePage.getTotalPages(), productResponsePage.getTotalElements());
+
+        return productResponsePage;
     }
+
 
     @Override
     @Transactional(rollbackFor = Exception.class)

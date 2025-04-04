@@ -5,14 +5,17 @@ import com.backend.controller.request.UpdateCartItemRequest;
 import com.backend.controller.response.CartItemResponse;
 import com.backend.controller.response.CartResponse;
 import com.backend.exception.ResourceNotFoundException;
-import com.backend.model.*; // Import các model cần thiết
-import com.backend.repository.*; // Import các repository cần thiết
+import com.backend.model.*;
+import com.backend.repository.*;
 import com.backend.service.CartService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
+// Import EntityManager nếu dùng giải pháp flush/refresh (hiện tại không cần)
+// import jakarta.persistence.EntityManager;
+// import jakarta.persistence.PersistenceContext;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -28,10 +31,12 @@ public class CartServiceImpl implements CartService {
 
     private final CartRepository cartRepository;
     private final CartItemRepository cartItemRepository;
-    private final UserRepository userRepository; // Để tìm user
-    private final ProductRepository productRepository; // Để tìm product
+    private final UserRepository userRepository;
+    private final ProductRepository productRepository;
+    // Inject EntityManager nếu cần dùng flush/refresh
+    // @PersistenceContext
+    // private EntityManager entityManager;
 
-    // Helper: Tìm hoặc tạo giỏ hàng cho user
     private CartEntity findOrCreateCartByUserId(Long userId) {
         return cartRepository.findByUserId(userId).orElseGet(() -> {
             log.info("No cart found for user ID: {}. Creating a new cart.", userId);
@@ -43,22 +48,19 @@ public class CartServiceImpl implements CartService {
         });
     }
 
-    // Helper: Map CartEntity sang CartResponse
     private CartResponse mapCartToResponse(CartEntity cart) {
         if (cart == null) {
-            return null; // Hoặc trả về giỏ hàng rỗng tùy logic
+            return null;
         }
 
         List<CartItemResponse> itemResponses = Collections.emptyList();
         BigDecimal totalAmount = BigDecimal.ZERO;
         int totalItemsCount = 0;
 
-        // Lấy danh sách cart items (có thể cần fetch nếu là LAZY)
-        // Cách 1: Dùng cart.getCartItems() nếu FetchType.EAGER hoặc session còn mở
-        List<CartItemEntity> items = (cart.getCartItems() != null) ? new ArrayList<>(cart.getCartItems()) : Collections.emptyList();
-        // Cách 2: Query riêng nếu FetchType.LAZY và không muốn dùng EAGER
-        // List<CartItemEntity> items = cartItemRepository.findByCart(cart);
-
+        // Đảm bảo collection được load (quan trọng nếu LAZY)
+        // Cần fetch cart items nếu là LAZY loading và session đã đóng
+        // Hoặc dùng @Transactional trên phương thức gọi để giữ session
+        List<CartItemEntity> items = cartItemRepository.findByCart(cart); // Query riêng để chắc chắn lấy dữ liệu mới nhất
 
         if (!CollectionUtils.isEmpty(items)) {
             itemResponses = items.stream()
@@ -67,6 +69,7 @@ public class CartServiceImpl implements CartService {
 
             totalAmount = itemResponses.stream()
                     .map(CartItemResponse::getSubTotal)
+                    .filter(java.util.Objects::nonNull) // Thêm filter để tránh NullPointerException
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             totalItemsCount = itemResponses.stream()
@@ -83,25 +86,27 @@ public class CartServiceImpl implements CartService {
                 .build();
     }
 
-    // Helper: Map CartItemEntity sang CartItemResponse
     private CartItemResponse mapCartItemToResponse(CartItemEntity item) {
         if (item == null || item.getProduct() == null) return null;
         ProductEntity product = item.getProduct();
-        BigDecimal price = product.getPrice(); // Lấy giá hiện tại của sản phẩm
-        BigDecimal subTotal = price.multiply(BigDecimal.valueOf(item.getQuantity()));
+        BigDecimal price = product.getPrice();
+        BigDecimal subTotal = BigDecimal.ZERO;
+        if (price != null && item.getQuantity() > 0) { // Kiểm tra null và quantity
+            subTotal = price.multiply(BigDecimal.valueOf(item.getQuantity()));
+        }
 
-        // Lấy ảnh đầu tiên (nếu dùng cấu trúc nhiều ảnh)
+
         String imageUrl = null;
-        // if (product.getImages() != null && !product.getImages().isEmpty()) {
-        //     imageUrl = product.getImages().iterator().next().getUrl();
-        // }
+         if (product.getImages() != null && !product.getImages().isEmpty()) {
+             imageUrl = product.getImages().iterator().next().getUrl();
+         }
 
         return CartItemResponse.builder()
                 .cartItemId(item.getId())
                 .productId(product.getId())
                 .productName(product.getName())
                 .productPrice(price)
-                .productImageUrl(imageUrl) // Thay bằng logic lấy ảnh của bạn
+                .productImageUrl(imageUrl)
                 .quantity(item.getQuantity())
                 .subTotal(subTotal)
                 .build();
@@ -109,13 +114,10 @@ public class CartServiceImpl implements CartService {
 
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public CartResponse getCartByUserId(Long userId) {
         log.info("Fetching cart for user ID: {}", userId);
         CartEntity cart = findOrCreateCartByUserId(userId);
-        // Cần fetch cart items nếu là LAZY loading
-        // Hibernate.initialize(cart.getCartItems()); // Cách 1: initialize
-        // Hoặc query riêng cartItemRepository.findByCart(cart); // Cách 2: query riêng
         return mapCartToResponse(cart);
     }
 
@@ -127,23 +129,17 @@ public class CartServiceImpl implements CartService {
         ProductEntity product = productRepository.findById(request.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + request.getProductId()));
 
-        // Kiểm tra số lượng tồn kho (quan trọng)
-        if (product.getStockQuantity() < request.getQuantity()) {
+        if (product.getStockQuantity() == null || product.getStockQuantity() < request.getQuantity()) {
             log.warn("Cannot add item: Not enough stock for product ID {}. Requested: {}, Available: {}", request.getProductId(), request.getQuantity(), product.getStockQuantity());
             throw new IllegalArgumentException("Not enough stock available for product: " + product.getName());
         }
 
-        // Tìm xem sản phẩm đã có trong giỏ hàng chưa
-        Optional<CartItemEntity> existingItemOpt = cart.getCartItems().stream()
-                .filter(item -> item.getProduct().getId().equals(request.getProductId()))
-                .findFirst();
-        // Hoặc dùng query: cartItemRepository.findByCartAndProduct(cart, product);
+        // Query trực tiếp thay vì dựa vào collection có thể chưa được load/cập nhật
+        Optional<CartItemEntity> existingItemOpt = cartItemRepository.findByCartAndProduct(cart, product);
 
         if (existingItemOpt.isPresent()) {
-            // Nếu có -> cập nhật số lượng
             CartItemEntity existingItem = existingItemOpt.get();
             int newQuantity = existingItem.getQuantity() + request.getQuantity();
-            // Kiểm tra lại tồn kho cho tổng số lượng mới
             if (product.getStockQuantity() < newQuantity) {
                 log.warn("Cannot add item: Not enough stock for product ID {}. Requested total: {}, Available: {}", request.getProductId(), newQuantity, product.getStockQuantity());
                 throw new IllegalArgumentException("Not enough stock available to add desired quantity for product: " + product.getName());
@@ -152,81 +148,79 @@ public class CartServiceImpl implements CartService {
             cartItemRepository.save(existingItem);
             log.info("Updated quantity for existing item. CartItem ID: {}, New Quantity: {}", existingItem.getId(), newQuantity);
         } else {
-            // Nếu chưa có -> tạo mới CartItemEntity
             CartItemEntity newItem = new CartItemEntity();
             newItem.setCart(cart);
             newItem.setProduct(product);
             newItem.setQuantity(request.getQuantity());
-            CartItemEntity savedNewItem = cartItemRepository.save(newItem);
-            cart.getCartItems().add(savedNewItem); // Thêm vào collection của Cart
-            log.info("Added new item to cart. CartItem ID: {}", savedNewItem.getId());
+            cartItemRepository.save(newItem);
+            log.info("Added new item to cart.");
         }
 
-        // Không cần cartRepository.save(cart) nếu CartItemEntity quản lý quan hệ và cascade đúng
-        // Tuy nhiên, save cart lại cũng không sao
-
-        return mapCartToResponse(cart);
+        // Gọi lại findById để đảm bảo lấy được CartEntity với collection đã cập nhật (nếu cần)
+        // Hoặc dựa vào mapCartToResponse query lại items
+        CartEntity updatedCart = cartRepository.findById(cart.getId()).orElse(cart);
+        return mapCartToResponse(updatedCart);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CartResponse updateCartItemQuantity(Long userId, Long cartItemId, UpdateCartItemRequest request) {
         log.info("Updating quantity for CartItem ID: {} for user ID: {}. New Quantity: {}", cartItemId, userId, request.getQuantity());
-        CartEntity cart = findOrCreateCartByUserId(userId); // Lấy giỏ hàng của user
+        CartEntity cart = findOrCreateCartByUserId(userId);
 
-        // Tìm cart item và đảm bảo nó thuộc về giỏ hàng của user này
         CartItemEntity cartItem = cartItemRepository.findByIdAndCart(cartItemId, cart)
                 .orElseThrow(() -> new ResourceNotFoundException("Cart item not found with ID: " + cartItemId + " in user's cart " + cart.getId()));
 
-
         ProductEntity product = cartItem.getProduct();
-        if (product == null) { // Defensive check
+        if (product == null) {
             log.error("Product associated with CartItem ID {} is null.", cartItemId);
             throw new IllegalStateException("Product not found for the cart item.");
         }
-        // Kiểm tra tồn kho
-        if (product.getStockQuantity() < request.getQuantity()) {
+        if (product.getStockQuantity() == null || product.getStockQuantity() < request.getQuantity()) {
             log.warn("Cannot update quantity: Not enough stock for product ID {}. Requested: {}, Available: {}", product.getId(), request.getQuantity(), product.getStockQuantity());
             throw new IllegalArgumentException("Not enough stock available for product: " + product.getName());
         }
-
 
         cartItem.setQuantity(request.getQuantity());
         cartItemRepository.save(cartItem);
         log.info("CartItem ID {} quantity updated to {}", cartItemId, request.getQuantity());
 
-        return mapCartToResponse(cart);
+        CartEntity updatedCart = cartRepository.findById(cart.getId()).orElse(cart);
+        return mapCartToResponse(updatedCart);
     }
 
+    // --- PHƯƠNG THỨC XÓA ĐÃ SỬA ---
     @Override
     @Transactional(rollbackFor = Exception.class)
     public CartResponse removeItemFromCart(Long userId, Long cartItemId) {
-        log.info("Removing CartItem ID: {} for user ID: {}", cartItemId, userId);
+        log.info("Attempting to remove CartItem ID: {} for user ID: {}", cartItemId, userId);
         CartEntity cart = findOrCreateCartByUserId(userId);
 
-        // Tìm cart item và đảm bảo nó thuộc về giỏ hàng của user này
-        CartItemEntity cartItemToRemove = cartItemRepository.findByIdAndCart(cartItemId, cart)
-                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found with ID: " + cartItemId + " in user's cart " + cart.getId()));
+        // Tìm cart item cần xóa, đảm bảo nó thuộc về cart của user này
+        CartItemEntity cartItemToRemove = cartItemRepository.findById(cartItemId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cart item not found with ID: " + cartItemId));
 
-        // Cách 1: Dùng orphanRemoval=true trên CartEntity.cartItems
-        boolean removed = cart.getCartItems().remove(cartItemToRemove);
-        if (removed) {
-            // cartRepository.save(cart); // Lưu lại cart để kích hoạt orphanRemoval nếu cần
-            log.info("Removed CartItem ID {} from cart collection.", cartItemId);
-        } else {
-            log.warn("CartItem ID {} was found but could not be removed from the cart's collection.", cartItemId);
+        // Kiểm tra xem cart item có thực sự thuộc về cart của user không
+        if (!cartItemToRemove.getCart().getId().equals(cart.getId())) {
+            log.error("CartItem ID {} does not belong to cart ID {}.", cartItemId, cart.getId());
+            throw new SecurityException("Cannot remove item that does not belong to the user's cart.");
         }
-        // Cách 2: Xóa trực tiếp (không cần orphanRemoval)
-        // cartItemRepository.delete(cartItemToRemove);
 
-        // Cần chắc chắn cartItem bị xóa khỏi DB
-        cartItemRepository.deleteById(cartItemId); // Đảm bảo xóa
+        // Thực hiện xóa
+        cartItemRepository.delete(cartItemToRemove);
+        log.info("Successfully deleted CartItem ID {}.", cartItemId);
 
-        // Nạp lại cart để lấy trạng thái mới nhất
-        CartEntity updatedCart = cartRepository.findById(cart.getId()).orElse(cart);
+        // Flush để đảm bảo thay đổi được ghi xuống DB trước khi đọc lại (tuỳ chọn, nhưng an toàn hơn)
+        // entityManager.flush(); // Bỏ comment nếu đã inject EntityManager
+
+        // Nạp lại cart từ DB để đảm bảo lấy trạng thái mới nhất sau khi xóa
+        // (Hoặc dựa vào mapCartToResponse query lại items như đã sửa ở trên)
+        CartEntity updatedCart = cartRepository.findById(cart.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Cart not found after item removal for ID: " + cart.getId())); // Nên throw lỗi nếu cart biến mất
 
         return mapCartToResponse(updatedCart);
     }
+
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -234,16 +228,14 @@ public class CartServiceImpl implements CartService {
         log.info("Clearing cart for user ID: {}", userId);
         CartEntity cart = findOrCreateCartByUserId(userId);
 
-        // Cách 1: Dùng orphanRemoval=true
-        if (cart.getCartItems() != null && !cart.getCartItems().isEmpty()) {
-            log.info("Clearing {} items from cart ID {}", cart.getCartItems().size(), cart.getId());
-            cart.getCartItems().clear();
-            cartRepository.save(cart); // Lưu để kích hoạt orphanRemoval
+        List<CartItemEntity> items = cartItemRepository.findByCart(cart); // Lấy danh sách items để log số lượng
+
+        if (!CollectionUtils.isEmpty(items)) {
+            log.info("Deleting {} items from cart ID {}", items.size(), cart.getId());
+            cartItemRepository.deleteAll(items); // Xóa tất cả items đã tìm thấy
+            log.info("Cart ID {} for user ID {} cleared.", cart.getId(), userId);
         } else {
             log.info("Cart ID {} for user ID {} is already empty.", cart.getId(), userId);
         }
-
-        // Cách 2: Xóa trực tiếp bằng repo (không cần orphanRemoval)
-        // cartItemRepository.deleteByCart(cart);
     }
 }

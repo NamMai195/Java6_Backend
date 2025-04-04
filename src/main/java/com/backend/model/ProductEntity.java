@@ -8,9 +8,8 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Entity
 @Getter
@@ -86,5 +85,14 @@ public class ProductEntity {
     public void removeImage(ProductImageEntity image) {
         getImages().remove(image);
         image.setProduct(null);
+    }
+    public List<String> getImageURLs() {
+        if (this.images == null || this.images.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return this.images.stream()
+                .map(ProductImageEntity::getUrl) // Lấy URL từ mỗi ảnh
+                .filter(Objects::nonNull)     // Bỏ qua nếu URL bị null
+                .collect(Collectors.toList());
     }
 }

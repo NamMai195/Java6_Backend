@@ -14,4 +14,6 @@ public class AddressRequest {
     private String city;
     private String country;
     private Integer addressType;
+    private String ward;
+    private String district;
 }

@@ -43,3 +43,15 @@ openapi:
     server: http://localhost:${server.port}
     title: Backend service
     version: 1.0.0
+
+# --- Thêm cấu hình JWT ---
+jwt:
+  # Thời gian hết hạn Access Token (tính bằng phút)
+  expiryMinutes: 60 # Ví dụ: 60 phút
+  # Thời gian hết hạn Refresh Token (tính bằng ngày)
+  expiryDay: 7 # Ví dụ: 7 ngày
+  # Khóa bí mật cho Access Token (đọc từ biến môi trường)
+  accessKey: Nd2ctQjF/hxvrm4N7iHupT99wF00tcWCJqHgIBi19xo=
+  # Khóa bí mật cho Refresh Token (đọc từ biến môi trường)
+  refreshKey: cv+Pfs4aPF/ap2L5g8tm2n94EC5V+iv1XFAuDdwkvts=
+# --- Kết thúc cấu hình JWT ---

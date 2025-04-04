@@ -3,26 +3,30 @@ package com.backend.model;
 import com.backend.common.Gender;
 import com.backend.common.UserStatus;
 import com.backend.common.UserType;
-import jakarta.persistence.*; // Đảm bảo import đúng
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.security.core.GrantedAuthority;
+// **THÊM IMPORT NÀY**
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
 
-import java.util.Date;
-import java.util.HashSet; // Import HashSet
-import java.util.Set;    // Import Set
+import java.io.Serializable;
+import java.util.*;
 
 @Entity
 @Getter
 @Setter
-@Table(name = "tbl_users", indexes = { // Thêm index nếu cần
+@Table(name = "tbl_users", indexes = {
         @Index(name = "idx_user_email", columnList = "email", unique = true),
         @Index(name = "idx_user_username", columnList = "username", unique = true),
         @Index(name = "idx_user_verification_token", columnList = "verification_token", unique = true)
 })
-public class UserEntity {
+public class UserEntity implements UserDetails, Serializable {
 
+    // ... (Các trường khác giữ nguyên: id, firstName, ..., updatedAt) ...
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -44,26 +48,23 @@ public class UserEntity {
     @Column(name = "username", unique = true, nullable = false, length = 255)
     private String username;
 
-    // Thêm unique=true, nullable=false cho email
     @Column(name = "email", unique = true, nullable = false, length = 255)
     private String email;
 
     @Column(name = "phone", length = 15)
     private String phone;
 
-    // --- SỬA Ở ĐÂY: Cho phép password là NULL ---
-    @Column(name = "password", length = 255) // Bỏ nullable=false
+    @Column(name = "password", length = 255)
     private String password;
 
     @Column(name = "type")
     @Enumerated(EnumType.STRING)
-    private UserType type;
+    private UserType type; // Trường này quyết định quyền
 
     @Column(name = "status")
     @Enumerated(EnumType.STRING)
     private UserStatus status;
 
-    // --- THÊM TRƯỜNG XÁC THỰC ---
     @Column(name = "verification_token", length = 100, unique = true)
     private String verificationToken;
 
@@ -71,19 +72,11 @@ public class UserEntity {
     @Temporal(TemporalType.TIMESTAMP)
     private Date tokenExpiryDate;
 
-    // --- THÊM MỐI QUAN HỆ VÀ CASCADE ---
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    private Set<AddressEntity> addresses = new HashSet<>(); // Khởi tạo Set
-
-    // (Thêm các mối quan hệ khác tới Order, Cart, Review nếu cần và đặt CascadeType phù hợp)
-    // Ví dụ:
-    // @OneToMany(mappedBy = "user", cascade = CascadeType.PERSIST, fetch = FetchType.LAZY)
-    // private Set<OrderEntity> orders = new HashSet<>();
-    // @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
-    // private CartEntity cart;
+    private Set<AddressEntity> addresses = new HashSet<>();
 
 
-    @Column(name = "created_at", updatable = false) // Thêm updatable = false
+    @Column(name = "created_at", updatable = false)
     @Temporal(TemporalType.TIMESTAMP)
     @CreationTimestamp
     private Date createdAt;
@@ -92,4 +85,44 @@ public class UserEntity {
     @Temporal(TemporalType.TIMESTAMP)
     @UpdateTimestamp
     private Date updatedAt;
+
+
+    // === SỬA PHƯƠNG THỨC NÀY ===
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        // Trả về danh sách quyền dựa trên trường 'type'
+        // Spring Security thường mong đợi quyền có tiền tố "ROLE_"
+        if (this.type != null) {
+            // Ví dụ: nếu type là UserType.ADMIN -> trả về role "ROLE_ADMIN"
+            //         nếu type là UserType.USER -> trả về role "ROLE_USER"
+            return List.of(new SimpleGrantedAuthority("ROLE_" + this.type.name()));
+        }
+        // Nếu không có type (không nên xảy ra), trả về danh sách rỗng
+        return List.of();
+    }
+    // ============================
+
+    @Override
+    public boolean isAccountNonExpired() {
+        // Mặc định là true, có thể thêm logic kiểm tra nếu cần
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        // Mặc định là true, có thể thêm logic kiểm tra nếu cần
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        // Mặc định là true, mật khẩu không tự hết hạn
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        // Chỉ cho phép user hoạt động nếu status là ACTIVE
+        return UserStatus.ACTIVE.equals(this.status);
+    }
 }

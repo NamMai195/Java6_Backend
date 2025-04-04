@@ -6,6 +6,7 @@ import com.backend.common.UserType;   // Import
 import lombok.*;
 
 import java.util.Date;
+import java.util.List;
 // Import thêm nếu muốn trả về cả Address
 // import java.util.List;
 // import com.backend.controller.response.AddressResponse; // Giả sử có AddressResponse
@@ -27,5 +28,5 @@ public class UserResponse {
     // --- Thêm các trường ---
     private UserType type;
     private UserStatus status;
-    // private List<AddressResponse> addresses; // Tùy chọn: trả về danh sách địa chỉ
+     private List<AddressResponse> addresses; // Tùy chọn: trả về danh sách địa chỉ
 }

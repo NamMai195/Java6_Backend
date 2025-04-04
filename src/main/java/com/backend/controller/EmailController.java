@@ -2,30 +2,33 @@ package com.backend.controller;
 
 import com.backend.controller.request.SendTemplateEmailRequest;
 import com.backend.service.BrevoEmailService;
+import io.swagger.v3.oas.annotations.Operation; // Thêm import này nếu cần mô tả API
+import io.swagger.v3.oas.annotations.tags.Tag; // Thêm import này nếu cần tag
+import lombok.RequiredArgsConstructor; // Có thể dùng @RequiredArgsConstructor thay cho @Autowired
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value; // Thêm import @Value
-import org.springframework.http.HttpStatus; // Thêm import HttpStatus
-import org.springframework.http.ResponseEntity; // Thêm import ResponseEntity
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping; // Sử dụng POST cho hành động gửi
-import org.springframework.web.bind.annotation.RequestBody; // Sử dụng RequestBody để nhận dữ liệu phức tạp hơn
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+// **THÊM IMPORT CHO PHÂN QUYỀN**
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated; // Thêm nếu dùng validation ở mức class
+import org.springframework.web.bind.annotation.*;
 import sendinblue.ApiException;
 
 import java.util.HashMap;
 import java.util.Map;
 
-
 @RestController
+@RequiredArgsConstructor // Dùng cái này thay @Autowired nếu muốn
+@Tag(name = "Email API (Admin)", description = "APIs for testing email sending (Admin Only)") // Thêm Tag cho Swagger
+@Validated // Thêm nếu có validation ở mức phương thức/tham số
 public class EmailController {
 
-    @Autowired
-    private BrevoEmailService brevoEmailService;
+    // @Autowired // Không cần nếu dùng @RequiredArgsConstructor
+    private final BrevoEmailService brevoEmailService;
 
     // --- Lấy các giá trị mặc định từ application.properties ---
-    // (Bạn cần định nghĩa các giá trị này trong file application.properties)
-    @Value("${app.email.defaults.login-link:https://yourdomain.com/login}") // Ví dụ giá trị mặc định
+    @Value("${app.email.defaults.login-link:https://yourdomain.com/login}")
     private String defaultLoginLink;
 
     @Value("${app.email.defaults.service-name:My Awesome Service}")
@@ -50,9 +53,9 @@ public class EmailController {
     private String defaultCompanySlogan;
     // --- Kết thúc phần lấy giá trị mặc định ---
 
-
-    // Endpoint cũ để gửi nội dung HTML trực tiếp (Giữ lại nếu cần)
-    @GetMapping("/send-email")
+    @Operation(summary = "Send Raw Email Test (Admin)", description = "Sends a simple HTML email directly. (Requires ADMIN role)") // Thêm mô tả Swagger
+    @GetMapping("/send-email") // Giữ nguyên hoặc đổi sang POST nếu thấy phù hợp hơn
+    @PreAuthorize("hasRole('ADMIN')") // **PHÂN QUYỀN ADMIN**
     public ResponseEntity<String> sendRawEmail(@RequestParam String toEmail, @RequestParam String subject, @RequestParam String content) {
         try {
             brevoEmailService.sendEmail(toEmail, subject, content);
@@ -68,54 +71,39 @@ public class EmailController {
         }
     }
 
-    /**
-     * Endpoint để gửi email sử dụng template của Brevo.
-     * Sử dụng phương thức POST vì nó thực hiện một hành động (gửi email).
-     * Sử dụng @RequestBody để nhận dữ liệu có cấu trúc.
-     */
+    @Operation(summary = "Send Template Email Test (Admin)", description = "Sends an email using a Brevo template. (Requires ADMIN role)") // Thêm mô tả Swagger
     @PostMapping("/send-template-email")
-    // Sử dụng ResponseEntity để trả về cả trạng thái HTTP và nội dung phản hồi
-    public ResponseEntity<String> sendTemplateEmail(@RequestBody SendTemplateEmailRequest request) {
+    @PreAuthorize("hasRole('ADMIN')") // **PHÂN QUYỀN ADMIN**
+    public ResponseEntity<String> sendTemplateEmail(@RequestBody SendTemplateEmailRequest request) { // Nên @Valid nếu request có validation
 
+        // Check null có thể bỏ nếu dùng @Valid và @NotNull/@NotBlank trong SendTemplateEmailRequest
         if (request.getToEmail() == null || request.getTemplateId() == null ||
                 request.getUserName() == null || request.getVerificationLink() == null) {
             return ResponseEntity.badRequest().body("Missing required fields: toEmail, templateId, userName, verificationLink");
         }
 
         try {
-            // Tạo Map chứa các tham số cho template
             Map<String, Object> params = new HashMap<>();
-
-            // Các tham số bắt buộc từ request
-            params.put("user_name", request.getUserName()); // Key khớp với {{ params.user_name }}
-            params.put("verification_link", request.getVerificationLink()); // Key khớp với {{ params.verification_link }}
-
-            // Các tham số khác (lấy từ request nếu có, nếu không dùng giá trị mặc định từ @Value)
-            // (Trong ví dụ này, chúng ta dùng giá trị mặc định)
+            params.put("user_name", request.getUserName());
+            params.put("verification_link", request.getVerificationLink());
             params.put("login_link", defaultLoginLink);
             params.put("service_name", defaultServiceName);
             params.put("company_name", defaultCompanyName);
-            params.put("company_slogan", defaultCompanySlogan); // Có thể là "" nếu không có
+            params.put("company_slogan", defaultCompanySlogan);
             params.put("company_address", defaultCompanyAddress);
             params.put("faq_link", defaultFaqLink);
             params.put("policy_link", defaultPolicyLink);
             params.put("support_phone", defaultSupportPhone);
 
-            // Gọi service để gửi email
             brevoEmailService.sendEmailWithTemplate(request.getToEmail(), request.getTemplateId(), params);
-
-            // Trả về phản hồi thành công
             return ResponseEntity.ok("Template email sent successfully to " + request.getToEmail());
 
         } catch (ApiException e) {
-            // Log lỗi chi tiết hơn phía server
             System.err.println("API Exception sending template email: " + e.getResponseBody());
             e.printStackTrace();
-            // Trả về lỗi cho client
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body("Failed to send template email due to API error: " + e.getMessage());
         } catch (Exception e) {
-            // Bắt các lỗi không mong muốn khác
             System.err.println("General Exception sending template email: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

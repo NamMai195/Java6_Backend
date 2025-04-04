@@ -1,20 +1,20 @@
 services:
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0.33 # Chỉ định version cụ thể hơn
     container_name: mysql
     cap_add:
       - SYS_NICE
     restart: always
     environment:
-      - MYSQL_DATABASE=testdb
-      - MYSQL_ROOT_PASSWORD=password
+      MYSQL_DATABASE: testdb
+      MYSQL_ROOT_PASSWORD: password # Chỉ dùng cho dev, prod nên dùng user riêng và password phức tạp hơn qua biến môi trường/secret
     ports:
       - '3306:3306'
     volumes:
-      - mysql_data:/var/lib/mysqlf
-      - ./initdb.sql:/docker-entrypoint-initdb.d/initdb.sql
+      - mysql_data:/var/lib/mysql # Sửa lỗi chính tả
+      - ./initdb.sql:/docker-entrypoint-initdb.d/initdb.sql # Đảm bảo file này tồn tại nếu bạn cần khởi tạo DB
     networks:
-      - default
+      - backend-network # Đặt tên cụ thể hơn cho network
 
   backend-service:
     container_name: backend-service-stm
@@ -23,12 +23,38 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+    environment:
+      # Cấu hình profile và kết nối DB
+      SPRING_PROFILES_ACTIVE: dev # Hoặc prod tùy môi trường deploy
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/testdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root # Nên dùng user riêng cho ứng dụng thay vì root
+      SPRING_DATASOURCE_PASSWORD: password # Đọc từ biến môi trường/secret ở production
+      # Biến môi trường cho các key bí mật
+      BREVO_API_KEY: ${BREVO_API_KEY} # Biến môi trường từ host hoặc file .env
+      JWT_ACCESS_KEY: ${JWT_ACCESS_KEY}
+      JWT_REFRESH_KEY: ${JWT_REFRESH_KEY}
+      # Các biến môi trường khác nếu cần
+      APP_BASE_URL: ${APP_BASE_URL}
+      EMAIL_VERIFICATION_TEMPLATE_ID: ${EMAIL_VERIFICATION_TEMPLATE_ID}
+    depends_on: # Đợi mysql sẵn sàng
+      mysql:
+        condition: service_healthy # Cần thêm healthcheck vào mysql service nếu dùng condition này, hoặc dùng service_started
     networks:
-      - default
+      - backend-network
 
 networks:
-  default:
-    name: backend-service-stm
+  backend-network: # Đổi tên network
+    name: backend-service-stm-network # Tên cụ thể hơn
 
 volumes:
   mysql_data:
+
+# Thêm healthcheck cho mysql (ví dụ)
+# services:
+#   mysql:
+#     ...
+#     healthcheck:
+#       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 5

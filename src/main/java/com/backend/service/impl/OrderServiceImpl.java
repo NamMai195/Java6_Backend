@@ -50,9 +50,15 @@ public class OrderServiceImpl implements OrderService {
     private OrderResponse mapOrderToResponse(OrderEntity order) {
         if (order == null) return null;
 
-        List<OrderItemResponse> itemResponses = order.getOrderItems().stream()
-                .map(this::mapOrderItemToResponse)
-                .collect(Collectors.toList());
+        List<OrderItemResponse> itemResponses = Collections.emptyList(); // Khởi tạo rỗng
+        if (order.getOrderItems() != null) { // Kiểm tra null trước khi stream
+            itemResponses = order.getOrderItems().stream()
+                    .map(this::mapOrderItemToResponse) // Gọi hàm map item đã sửa
+                    .filter(Objects::nonNull) // Bỏ qua nếu map trả về null
+                    .collect(Collectors.toList());
+        } else {
+            log.warn("OrderItems collection is null for Order ID: {}", order.getId());
+        }
 
         return OrderResponse.builder()
                 .id(order.getId())
@@ -72,19 +78,36 @@ public class OrderServiceImpl implements OrderService {
                 .build();
     }
 
+    // Trong file OrderServiceImpl.java
     private OrderItemResponse mapOrderItemToResponse(OrderItemEntity item) {
-        if (item == null || item.getProduct() == null) return null;
+        if (item == null || item.getProduct() == null) {
+            log.warn("Skipping mapping: OrderItem or its Product is null. OrderItemID: {}", item != null ? item.getId() : "N/A");
+            return null;
+        }
+        ProductEntity product = item.getProduct();
+
+        // Lấy URL ảnh đầu tiên từ ProductEntity qua hàm getImageURLs() mới thêm
+        String imageUrl = null;
+        List<String> imageUrls = product.getImageURLs(); // Gọi hàm helper mới thêm
+        if (imageUrls != null && !imageUrls.isEmpty()) {
+            imageUrl = imageUrls.get(0); // Lấy ảnh đầu tiên
+        } else {
+            log.warn("Product ID {} associated with OrderItem ID {} has no image URLs.", product.getId(), item.getId());
+        }
+
         return OrderItemResponse.builder()
                 .orderItemId(item.getId())
-                .productId(item.getProduct().getId())
-                .productName(item.getProduct().getName())
-                .productSku(item.getProduct().getSku())
+                .productId(product.getId())
+                .productName(product.getName())
+                .productSku(product.getSku())
+                .productImageUrl(imageUrl) // <<< GÁN GIÁ TRỊ imageUrl VÀO ĐÂY
                 .priceAtOrder(item.getPriceAtOrder())
                 .quantity(item.getQuantity())
                 .subTotal(item.getSubtotal())
                 .build();
     }
 
+    // Trong file OrderServiceImpl.java
     private AddressResponse mapAddressToResponse(AddressEntity address) {
         if (address == null) return null;
         return AddressResponse.builder()
@@ -94,8 +117,11 @@ public class OrderServiceImpl implements OrderService {
                 .building(address.getBuilding())
                 .streetNumber(address.getStreetNumber())
                 .street(address.getStreet())
+                .ward(address.getWard())         // <-- Thêm ward
+                .district(address.getDistrict()) // <-- Thêm district
                 .city(address.getCity())
                 .country(address.getCountry())
+                .addressType(address.getAddressType()) // <-- Thêm addressType
                 .build();
     }
     // --- Service Implementations ---

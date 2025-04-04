@@ -17,5 +17,6 @@ public class OrderItemResponse {
     private BigDecimal priceAtOrder; // Giá tại thời điểm đặt hàng
     private Integer quantity;
     private BigDecimal subTotal; // quantity * priceAtOrder
+    private String productImageUrl;
     // Có thể thêm imageUrl nếu cần
 }
