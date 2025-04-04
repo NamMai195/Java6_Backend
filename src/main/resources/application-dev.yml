@@ -23,7 +23,7 @@ springdoc:
   swagger-ui:
     enabled: true
 brevo:
-  api-key: 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
+  api-key:
 app:
   base-url: http://localhost:8080 # URL gốc của ứng dụng của bạn (quan trọng cho link xác thực)
   email:
