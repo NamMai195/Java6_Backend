@@ -17,41 +17,57 @@ spring:
     username: root
     password: password
     driver-class-name: com.mysql.cj.jdbc.Driver
-springdoc:
+  # --- Cấu hình OAuth2 Client --- # Giữ nguyên
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: 918503735598-23k0fijtvth5huja6pjmeh306ici3ilu.apps.googleusercontent.com
+            client-secret: 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
+            scope:
+              - email
+              - profile
+  # --- Kết thúc cấu hình OAuth2 Client ---
+
+springdoc: # Giữ nguyên
   api-docs:
     enabled: true
   swagger-ui:
     enabled: true
-brevo:
-  api-key:
+brevo: # Giữ nguyên
+  api-key: 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
 app:
-  base-url: http://localhost:8080 # URL gốc của ứng dụng của bạn (quan trọng cho link xác thực)
-  email:
-    verification-template-id: 3  # **QUAN TRỌNG**: Thay bằng ID template xác thực thực tế của bạn trên Brevo
+  base-url: http://localhost:8080 # Giữ nguyên
+  email: # Giữ nguyên
+    verification-template-id: 3
     defaults:
       login-link: https://my-app.com/login
-      service-name: My Application # Tên ứng dụng của bạn
-      company-name: My Company Inc. # Tên công ty
+      service-name: My Application
+      company-name: My Company Inc.
       company-address: 456 Tech Road, Silicon Valley
       support-phone: 1-800-SUPPORT
       faq-link: https://my-app.com/faq
       policy-link: https://my-app.com/policy
       company-slogan: Innovating the Future
-openapi:
+
+  # << THÊM CÁC CẤU HÌNH CHO OAUTH2 REDIRECT VÀO ĐÂY >>
+  frontend-url: http://localhost:5173 # URL gốc của Frontend (Vue.js)
+  oauth2:
+    redirect-path: /logincallback # Path trên frontend để xử lý token sau khi redirect
+  # << KẾT THÚC PHẦN THÊM >>
+
+openapi: # Giữ nguyên
   service:
     api-docs: backend-service
     server: http://localhost:${server.port}
     title: Backend service
     version: 1.0.0
 
-# --- Thêm cấu hình JWT ---
+# --- Cấu hình JWT --- # Giữ nguyên
 jwt:
-  # Thời gian hết hạn Access Token (tính bằng phút)
-  expiryMinutes: 60 # Ví dụ: 60 phút
-  # Thời gian hết hạn Refresh Token (tính bằng ngày)
-  expiryDay: 7 # Ví dụ: 7 ngày
-  # Khóa bí mật cho Access Token (đọc từ biến môi trường)
+  expiryMinutes: 60
+  expiryDay: 7
   accessKey: Nd2ctQjF/hxvrm4N7iHupT99wF00tcWCJqHgIBi19xo=
-  # Khóa bí mật cho Refresh Token (đọc từ biến môi trường)
   refreshKey: cv+Pfs4aPF/ap2L5g8tm2n94EC5V+iv1XFAuDdwkvts=
 # --- Kết thúc cấu hình JWT ---

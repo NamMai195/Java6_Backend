@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:8.0.33 # Chỉ định version cụ thể hơn
+    image: mysql:8.0
     container_name: mysql
     cap_add:
       - SYS_NICE
@@ -15,6 +15,11 @@ services:
       - ./initdb.sql:/docker-entrypoint-initdb.d/initdb.sql # Đảm bảo file này tồn tại nếu bạn cần khởi tạo DB
     networks:
       - backend-network # Đặt tên cụ thể hơn cho network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend-service:
     container_name: backend-service-stm
@@ -48,13 +53,3 @@ networks:
 
 volumes:
   mysql_data:
-
-# Thêm healthcheck cho mysql (ví dụ)
-# services:
-#   mysql:
-#     ...
-#     healthcheck:
-#       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p$$MYSQL_ROOT_PASSWORD"]
-#       interval: 10s
-#       timeout: 5s
-#       retries: 5

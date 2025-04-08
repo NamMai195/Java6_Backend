@@ -2,19 +2,21 @@
 package com.backend.service.impl;
 
 import com.backend.common.UserStatus;
+import com.backend.common.UserType;
 import com.backend.controller.request.*;
-import com.backend.controller.response.AddressResponse; // Phải import AddressResponse
+import com.backend.controller.response.AddressResponse;
 import com.backend.controller.response.UserResponse;
 import com.backend.exception.ResourceNotFoundException;
 import com.backend.model.AddressEntity;
 import com.backend.model.UserEntity;
 import com.backend.repository.AddressRepository;
+import com.backend.repository.OrderRepository; // Đảm bảo import này đúng
 import com.backend.repository.UserRepository;
 import com.backend.service.BrevoEmailService;
 import com.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.hibernate.Hibernate; // Import Hibernate
+import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,20 +40,19 @@ public class UserServiceImpl implements UserService {
     private final AddressRepository addressRepository;
     private final PasswordEncoder passwordEncoder;
     private final BrevoEmailService emailService;
+    private final OrderRepository orderRepository; // Đảm bảo đã inject
 
+    // --- Các @Value giữ nguyên ---
     @Value("${app.base-url:http://localhost:8080}")
     private String appBaseUrl;
-
     @Value("${app.email.verification-template-id:1}")
     private Long verificationTemplateId;
-
     @Value("${app.email.defaults.service-name:My Application}")
     private String defaultServiceName;
-
     @Value("${app.email.defaults.company-name:My Company Inc.}")
     private String defaultCompanyName;
 
-    // --- SỬA LẠI HÀM MAP NÀY ---
+    // --- mapToUserResponse và mapToAddressResponse giữ nguyên ---
     private UserResponse mapToUserResponse(UserEntity userEntity) {
         UserResponse.UserResponseBuilder builder = UserResponse.builder()
                 .id(userEntity.getId())
@@ -65,22 +66,19 @@ public class UserServiceImpl implements UserService {
                 .type(userEntity.getType())
                 .status(userEntity.getStatus());
 
-        // Thêm logic map addresses
         if (Hibernate.isInitialized(userEntity.getAddresses()) && userEntity.getAddresses() != null) {
             builder.addresses(userEntity.getAddresses().stream()
-                    .map(this::mapToAddressResponse) // Gọi hàm map địa chỉ
+                    .map(this::mapToAddressResponse)
                     .collect(Collectors.toList()));
         } else {
-            builder.addresses(Collections.emptyList()); // Trả về list rỗng nếu chưa initialize
+            builder.addresses(Collections.emptyList());
             if (!Hibernate.isInitialized(userEntity.getAddresses())) {
                 log.warn("Addresses collection was not initialized when mapping UserResponse for user {}", userEntity.getId());
             }
         }
-
         return builder.build();
     }
 
-    // Hàm map địa chỉ (Đảm bảo tồn tại và chính xác)
     private AddressResponse mapToAddressResponse(AddressEntity addressEntity) {
         if (addressEntity == null) return null;
         return AddressResponse.builder()
@@ -95,14 +93,10 @@ public class UserServiceImpl implements UserService {
                 .city(addressEntity.getCity())
                 .country(addressEntity.getCountry())
                 .addressType(addressEntity.getAddressType())
-                // Map các trường code nếu có và cần thiết
-                // .provinceCode(addressEntity.getProvinceCode())
-                // .districtCode(addressEntity.getDistrictCode())
-                // .wardCode(addressEntity.getWardCode())
                 .build();
     }
 
-
+    // --- findAll, findByUserName, findById, findByEmail giữ nguyên ---
     @Override
     @Transactional(readOnly = true)
     public List<UserResponse> findAll(String keyword, Pageable pageable) {
@@ -114,8 +108,6 @@ public class UserServiceImpl implements UserService {
             log.info("Finding all active users, page {}, size {}", pageable.getPageNumber(), pageable.getPageSize());
             userPage = userRepository.findByStatus(UserStatus.ACTIVE, pageable);
         }
-
-        // Initialize addresses cho từng user trong list trước khi map
         List<UserEntity> userEntities = userPage.getContent();
         userEntities.forEach(user -> {
             try {
@@ -124,7 +116,6 @@ public class UserServiceImpl implements UserService {
                 log.error("Error initializing addresses for user {}: {}", user.getId(), e.getMessage());
             }
         });
-
         return userEntities.stream()
                 .map(this::mapToUserResponse)
                 .collect(Collectors.toList());
@@ -174,6 +165,7 @@ public class UserServiceImpl implements UserService {
         return mapToUserResponse(user);
     }
 
+    // --- save giữ nguyên ---
     @Override
     @Transactional(rollbackFor = Exception.class)
     public long save(UserCreationRequest req) {
@@ -220,10 +212,6 @@ public class UserServiceImpl implements UserService {
                 addressEntity.setCity(addressReq.getCity());
                 addressEntity.setCountry(addressReq.getCountry());
                 addressEntity.setAddressType(addressReq.getAddressType());
-                // Map code nếu có
-                // addressEntity.setProvinceCode(addressReq.getProvinceCode());
-                // addressEntity.setDistrictCode(addressReq.getDistrictCode());
-                // addressEntity.setWardCode(addressReq.getWardCode());
                 addressEntity.setUser(user);
                 addresses.add(addressEntity);
             }
@@ -258,7 +246,8 @@ public class UserServiceImpl implements UserService {
         return savedUser.getId();
     }
 
-
+    // --- SỬA LẠI PHƯƠNG THỨC UPDATE ---
+    // --- THAY THẾ TOÀN BỘ PHƯƠNG THỨC UPDATE HIỆN TẠI BẰNG CODE NÀY ---
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void update(UserUpdateRequest req) {
@@ -268,8 +257,10 @@ public class UserServiceImpl implements UserService {
         }
         log.info("Attempting to update user profile with ID: {}", req.getId());
 
+        // Lấy UserEntity hiện có từ DB
         UserEntity user = getUserById(req.getId());
 
+        // --- Cập nhật thông tin cơ bản (Giữ nguyên) ---
         if (StringUtils.hasText(req.getFirstName())) {
             user.setFirstName(req.getFirstName());
         }
@@ -280,58 +271,110 @@ public class UserServiceImpl implements UserService {
             user.setGender(req.getGender());
         }
         user.setBirthday(req.getBirthday());
-        if(req.getBirthday() != null) log.debug("Updating birthday for user {}", req.getId());
+        if (req.getBirthday() != null) log.debug("Updating birthday for user {}", req.getId());
         else log.debug("Setting birthday to null for user {}", req.getId());
 
         if (req.getPhone() != null) {
             user.setPhone(StringUtils.hasText(req.getPhone()) ? req.getPhone() : null);
         }
+        // --- Kết thúc cập nhật thông tin cơ bản ---
 
-        log.info("Updating addresses for user ID: {}. Clearing existing addresses first.", user.getId());
-        user.getAddresses().clear();
 
+        // --- Xử lý cập nhật địa chỉ (Đã sửa logic xóa an toàn) ---
+        Set<AddressEntity> existingAddresses = new HashSet<>(user.getAddresses()); // Tạo bản sao để duyệt/sửa an toàn
+        Set<AddressEntity> finalAddresses = new HashSet<>(); // Set để chứa địa chỉ cuối cùng (mới, cập nhật, cũ còn dùng)
+
+        // Map để theo dõi địa chỉ mới/cập nhật từ request (giả định AddressRequest chưa có ID)
+        // Nếu AddressRequest có ID, logic map và update sẽ hiệu quả hơn.
+        // Hiện tại, logic này sẽ coi mọi address trong request là mới và giữ lại address cũ nếu trùng hoặc đang dùng.
+        Set<AddressEntity> requestedNewAddresses = new HashSet<>();
         if (req.getAddresses() != null && !req.getAddresses().isEmpty()) {
-            log.info("Adding {} new/updated addresses.", req.getAddresses().size());
-            Set<AddressEntity> newAddresses = new HashSet<>();
+            log.info("Processing {} addresses from update request for user {}", req.getAddresses().size(), req.getId());
             for (AddressRequest addressReq : req.getAddresses()) {
-                AddressEntity addressEntity = new AddressEntity();
-                addressEntity.setApartmentNumber(addressReq.getApartmentNumber());
-                addressEntity.setFloor(addressReq.getFloor());
-                addressEntity.setBuilding(addressReq.getBuilding());
-                addressEntity.setStreetNumber(addressReq.getStreetNumber());
-                addressEntity.setStreet(addressReq.getStreet());
-                addressEntity.setCountry(addressReq.getCountry());
-                addressEntity.setAddressType(addressReq.getAddressType());
-                addressEntity.setCity(addressReq.getCity());
-                addressEntity.setDistrict(addressReq.getDistrict());
-                addressEntity.setWard(addressReq.getWard());
-                // Gán cả code nếu bạn đã thêm vào Entity và Request
-                // addressEntity.setProvinceCode(addressReq.getProvinceCode());
-                // addressEntity.setDistrictCode(addressReq.getDistrictCode());
-                // addressEntity.setWardCode(addressReq.getWardCode());
-                addressEntity.setUser(user);
-                newAddresses.add(addressEntity);
+                AddressEntity newOrUpdatedAddr = new AddressEntity();
+                newOrUpdatedAddr.setApartmentNumber(addressReq.getApartmentNumber());
+                newOrUpdatedAddr.setFloor(addressReq.getFloor());
+                newOrUpdatedAddr.setBuilding(addressReq.getBuilding());
+                newOrUpdatedAddr.setStreetNumber(addressReq.getStreetNumber());
+                newOrUpdatedAddr.setStreet(addressReq.getStreet());
+                newOrUpdatedAddr.setWard(addressReq.getWard());
+                newOrUpdatedAddr.setDistrict(addressReq.getDistrict());
+                newOrUpdatedAddr.setCity(addressReq.getCity());
+                newOrUpdatedAddr.setCountry(addressReq.getCountry());
+                newOrUpdatedAddr.setAddressType(addressReq.getAddressType());
+                newOrUpdatedAddr.setUser(user); // Quan trọng: Liên kết với User
+                requestedNewAddresses.add(newOrUpdatedAddr);
+                finalAddresses.add(newOrUpdatedAddr); // Tạm thời thêm tất cả vào final list
             }
-            user.getAddresses().addAll(newAddresses);
         } else {
             log.info("No addresses provided in the update request for user {}.", req.getId());
         }
 
-        userRepository.save(user);
-        log.info("Successfully updated user profile (excluding email/username) and addresses for ID: {}", user.getId());
-    }
+        // Xác định địa chỉ cũ cần kiểm tra để xóa
+        for (AddressEntity existingAddr : existingAddresses) {
+            // Kiểm tra xem địa chỉ cũ này có tương ứng trong request mới không (dựa trên nội dung vì không có ID request)
+            // Nếu anh có ID trong AddressRequest, việc kiểm tra sẽ là existingAddr.getId() có trong requestAddressIds không.
+            boolean isPresentInRequest = requestedNewAddresses.stream().anyMatch(reqAddr ->
+                            Objects.equals(reqAddr.getStreet(), existingAddr.getStreet()) &&
+                                    Objects.equals(reqAddr.getCity(), existingAddr.getCity()) &&
+                                    Objects.equals(reqAddr.getWard(), existingAddr.getWard()) &&
+                                    Objects.equals(reqAddr.getDistrict(), existingAddr.getDistrict()) &&
+                                    Objects.equals(reqAddr.getApartmentNumber(), existingAddr.getApartmentNumber()) &&
+                                    Objects.equals(reqAddr.getAddressType(), existingAddr.getAddressType())
+                    // Thêm các trường so sánh khác nếu cần
+            );
 
+            // Nếu địa chỉ cũ không có trong request mới -> kiểm tra xem có nên xóa không
+            if (!isPresentInRequest) {
+                log.warn("Checking if existing address ID {} for user {} can be removed.", existingAddr.getId(), req.getId());
+
+                // *** KIỂM TRA QUAN TRỌNG VỚI 2 HÀM REPOSITORY MỚI ***
+                boolean isUsedInOrder = orderRepository.existsByShippingAddressId(existingAddr.getId())
+                        || orderRepository.existsByBillingAddressId(existingAddr.getId());
+                // ******************************************************
+
+                if (isUsedInOrder) {
+                    log.warn("Address ID {} is used in orders and cannot be deleted. It will be kept.", existingAddr.getId());
+                    // Nếu không được xóa, thêm nó vào danh sách cuối cùng
+                    finalAddresses.add(existingAddr);
+                } else {
+                    log.info("Address ID {} is not used in orders. It will be removed from user association (orphanRemoval will delete).", existingAddr.getId());
+                    // Không thêm vào finalAddresses -> Hibernate sẽ xóa nếu có orphanRemoval=true
+                    // Hoặc gọi addressRepository.delete(existingAddr); nếu cần xóa ngay lập tức (ít dùng)
+                }
+            } else {
+                // Nếu địa chỉ cũ có trong request -> giữ lại (logic hiện tại đã bao gồm trong finalAddresses)
+                // Nếu AddressRequest có ID, đây là lúc cập nhật các trường của existingAddr
+                // hiện tại thì updatedAddresses đã chứa phiên bản mới từ request, ta chỉ cần đảm bảo existingAddr cũ không bị xóa nếu nó đang được dùng trong order
+                if (orderRepository.existsByShippingAddressId(existingAddr.getId()) || orderRepository.existsByBillingAddressId(existingAddr.getId())){
+                    // Nếu địa chỉ cũ giống hệt request mới VÀ đang được dùng trong order, cần đảm bảo giữ lại phiên bản cũ này
+                    // (logic hiện tại đã bao gồm trong finalAddresses, nhưng viết rõ ra để dễ hiểu)
+                    finalAddresses.add(existingAddr);
+                }
+            }
+        }
+
+        // Cập nhật collection addresses của user
+        user.getAddresses().clear(); // Xóa sạch collection hiện tại
+        user.getAddresses().addAll(finalAddresses); // Thêm lại các địa chỉ hợp lệ
+
+        // Lưu lại User (Cascade và orphanRemoval sẽ xử lý DB)
+        userRepository.save(user);
+        log.info("Successfully updated user profile and addresses for ID: {}", user.getId());
+    }
+    // --- Kết thúc phương thức update đã sửa ---
+
+
+    // --- Các phương thức còn lại (changePassword, delete, ...) giữ nguyên ---
     @Override
     @Transactional
     public void changePassword(UserPasswordRequest req) {
         log.info("Attempting to change password for user ID: {}", req.getId());
         UserEntity user = getUserById(req.getId());
-
         if (req.getPassword() == null || !req.getPassword().equals(req.getConfirmPassword())) {
             log.error("Password and confirm password do not match for user ID: {}", req.getId());
             throw new IllegalArgumentException("Password and confirm password do not match.");
         }
-
         user.setPassword(passwordEncoder.encode(req.getPassword()));
         userRepository.save(user);
         log.info("Password changed successfully for user ID: {}", user.getId());
@@ -381,7 +424,6 @@ public class UserServiceImpl implements UserService {
     @Transactional(rollbackFor = Exception.class)
     public void setInitialPassword(SetInitialPasswordRequest request)
             throws ResourceNotFoundException, IllegalStateException, IllegalArgumentException {
-
         if (request.getToken() == null || request.getToken().isBlank()) {
             throw new IllegalArgumentException("Token is required.");
         }
@@ -428,8 +470,45 @@ public class UserServiceImpl implements UserService {
         log.info("Initial password set successfully for user {}", user.getUsername());
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public UserEntity processOAuthPostLogin(String email, String firstName, String lastName, String imageUrl) {
+        log.info("Processing OAuth2 post login for email: {}", email);
+        Optional<UserEntity> existUserOpt = userRepository.findByEmail(email);
+        UserEntity userEntity;
+        if (existUserOpt.isPresent()) {
+            userEntity = existUserOpt.get();
+            log.info("User with email {} already exists. ID: {}", email, userEntity.getId());
+        } else {
+            log.info("User with email {} does not exist. Creating new user.", email);
+            UserEntity newUser = new UserEntity();
+            newUser.setEmail(email);
+            newUser.setUsername(generateUniqueUsernameFromEmail(email));
+            newUser.setFirstName(firstName);
+            newUser.setLastName(lastName);
+            newUser.setPassword(null);
+            newUser.setStatus(UserStatus.ACTIVE);
+            newUser.setType(UserType.USER);
+            userEntity = userRepository.save(newUser);
+            log.info("New user created via Google OAuth2 with ID: {}", userEntity.getId());
+        }
+        return userEntity;
+    }
+
+    private String generateUniqueUsernameFromEmail(String email) {
+        String baseUsername = email.split("@")[0].replaceAll("[^a-zA-Z0-9]", "");
+        String finalUsername = baseUsername;
+        int counter = 1;
+        while (userRepository.existsByUsername(finalUsername)) {
+            finalUsername = baseUsername + counter;
+            counter++;
+        }
+        return finalUsername;
+    }
+
     private UserEntity getUserById(Long id){
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + id));
     }
+
 }

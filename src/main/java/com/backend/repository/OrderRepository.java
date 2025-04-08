@@ -20,4 +20,11 @@ public interface OrderRepository extends JpaRepository<OrderEntity, Long>, JpaSp
 
     // Tìm đơn hàng theo mã đơn hàng (orderCode)
     Optional<OrderEntity> findByOrderCode(String orderCode);
+
+    boolean existsByShippingAddressId(Long shippingAddressId);
+
+    /**
+     * Kiểm tra xem có đơn hàng nào dùng địa chỉ này làm địa chỉ thanh toán không.
+     */
+    boolean existsByBillingAddressId(Long billingAddressId);
 }

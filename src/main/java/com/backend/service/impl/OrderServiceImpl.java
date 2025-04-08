@@ -1,45 +1,69 @@
 package com.backend.service.impl;
 
 import com.backend.common.OrderStatus;
-import com.backend.common.PaymentStatus; // Import PaymentStatus
+import com.backend.common.PaymentStatus;
 import com.backend.controller.request.OrderCreationRequest;
-import com.backend.controller.response.*; // Import các response DTOs
+import com.backend.controller.response.*;
 import com.backend.exception.InvalidDataException;
 import com.backend.exception.ResourceNotFoundException;
-import com.backend.model.*; // Import các model
-import com.backend.repository.*; // Import các repository
-import com.backend.service.CartService; // Import CartService
+import com.backend.model.*;
+import com.backend.repository.*;
+// << THÊM IMPORT NÀY >>
+import com.backend.service.BrevoEmailService;
+import com.backend.service.CartService;
 import com.backend.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value; // << THÊM IMPORT NÀY >>
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl; // Import PageImpl
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Async; // << THÊM IMPORT NÀY (Cho Async nếu dùng) >>
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
 import java.math.BigDecimal;
-import java.util.*; // Import Set, HashSet, ArrayList, Date
-import java.util.concurrent.locks.Lock; // Import Lock
-import java.util.concurrent.locks.ReentrantLock; // Import ReentrantLock
+import java.text.NumberFormat; // Cho format tiền tệ
+import java.text.SimpleDateFormat; // Cho format ngày tháng
+import java.util.*;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 @Service
 @Slf4j(topic = "ORDER-SERVICE")
-@RequiredArgsConstructor
+@RequiredArgsConstructor // Đảm bảo BrevoEmailService được inject
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository; // Inject OrderItemRepository
+    private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
     private final ProductRepository productRepository;
     private final AddressRepository addressRepository;
-    private final CartService cartService; // Inject CartService
-    private final CartItemRepository cartItemRepository; // Inject để lấy cart items
+    private final CartService cartService;
+    private final CartItemRepository cartItemRepository;
+    // << INJECT BREVO EMAIL SERVICE >>
+    private final BrevoEmailService brevoEmailService;
 
     // Sử dụng Lock để tránh race condition khi cập nhật tồn kho
     private final Map<Long, Lock> productLocks = new HashMap<>();
+
+    // << (TÙY CHỌN) INJECT CÁC GIÁ TRỊ MẶC ĐỊNH TỪ CONFIG >>
+    @Value("${app.email.defaults.service-name:PETSHOP}")
+    private String defaultServiceName;
+
+    @Value("${app.email.defaults.company-name:PETSHOP Inc.}")
+    private String defaultCompanyName;
+
+    @Value("${app.email.defaults.login-link:#}") // Link trang login
+    private String defaultLoginLink;
+
+    @Value("${app.email.defaults.support-email:support@petshop.com}") // Email hỗ trợ
+    private String defaultSupportEmail;
+
+    @Value("${app.email.defaults.support-phone:1900 XXXX}") // Phone hỗ trợ
+    private String defaultSupportPhone;
 
     private Lock getProductLock(Long productId) {
         return productLocks.computeIfAbsent(productId, k -> new ReentrantLock());
@@ -47,14 +71,16 @@ public class OrderServiceImpl implements OrderService {
 
     // --- Helper Methods ---
 
+    // mapOrderToResponse, mapOrderItemToResponse, mapAddressToResponse giữ nguyên như trước
+
     private OrderResponse mapOrderToResponse(OrderEntity order) {
         if (order == null) return null;
 
-        List<OrderItemResponse> itemResponses = Collections.emptyList(); // Khởi tạo rỗng
-        if (order.getOrderItems() != null) { // Kiểm tra null trước khi stream
+        List<OrderItemResponse> itemResponses = Collections.emptyList();
+        if (order.getOrderItems() != null) {
             itemResponses = order.getOrderItems().stream()
-                    .map(this::mapOrderItemToResponse) // Gọi hàm map item đã sửa
-                    .filter(Objects::nonNull) // Bỏ qua nếu map trả về null
+                    .map(this::mapOrderItemToResponse)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
         } else {
             log.warn("OrderItems collection is null for Order ID: {}", order.getId());
@@ -68,7 +94,7 @@ public class OrderServiceImpl implements OrderService {
                 .totalAmount(order.getTotalAmount())
                 .status(order.getStatus())
                 .shippingAddress(mapAddressToResponse(order.getShippingAddress()))
-                .billingAddress(mapAddressToResponse(order.getBillingAddress())) // Có thể null
+                .billingAddress(mapAddressToResponse(order.getBillingAddress()))
                 .paymentMethod(order.getPaymentMethod())
                 .paymentStatus(order.getPaymentStatus())
                 .notes(order.getNotes())
@@ -78,36 +104,31 @@ public class OrderServiceImpl implements OrderService {
                 .build();
     }
 
-    // Trong file OrderServiceImpl.java
     private OrderItemResponse mapOrderItemToResponse(OrderItemEntity item) {
         if (item == null || item.getProduct() == null) {
             log.warn("Skipping mapping: OrderItem or its Product is null. OrderItemID: {}", item != null ? item.getId() : "N/A");
             return null;
         }
         ProductEntity product = item.getProduct();
-
-        // Lấy URL ảnh đầu tiên từ ProductEntity qua hàm getImageURLs() mới thêm
         String imageUrl = null;
-        List<String> imageUrls = product.getImageURLs(); // Gọi hàm helper mới thêm
+        List<String> imageUrls = product.getImageURLs();
         if (imageUrls != null && !imageUrls.isEmpty()) {
-            imageUrl = imageUrls.get(0); // Lấy ảnh đầu tiên
+            imageUrl = imageUrls.get(0);
         } else {
             log.warn("Product ID {} associated with OrderItem ID {} has no image URLs.", product.getId(), item.getId());
         }
-
         return OrderItemResponse.builder()
                 .orderItemId(item.getId())
                 .productId(product.getId())
                 .productName(product.getName())
                 .productSku(product.getSku())
-                .productImageUrl(imageUrl) // <<< GÁN GIÁ TRỊ imageUrl VÀO ĐÂY
+                .productImageUrl(imageUrl)
                 .priceAtOrder(item.getPriceAtOrder())
                 .quantity(item.getQuantity())
                 .subTotal(item.getSubtotal())
                 .build();
     }
 
-    // Trong file OrderServiceImpl.java
     private AddressResponse mapAddressToResponse(AddressEntity address) {
         if (address == null) return null;
         return AddressResponse.builder()
@@ -117,11 +138,11 @@ public class OrderServiceImpl implements OrderService {
                 .building(address.getBuilding())
                 .streetNumber(address.getStreetNumber())
                 .street(address.getStreet())
-                .ward(address.getWard())         // <-- Thêm ward
-                .district(address.getDistrict()) // <-- Thêm district
+                .ward(address.getWard())
+                .district(address.getDistrict())
                 .city(address.getCity())
                 .country(address.getCountry())
-                .addressType(address.getAddressType()) // <-- Thêm addressType
+                .addressType(address.getAddressType())
                 .build();
     }
     // --- Service Implementations ---
@@ -131,131 +152,217 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse createOrderFromCart(Long userId, OrderCreationRequest request) {
         log.info("Attempting to create order from cart for user ID: {}", userId);
 
-        // 1. Lấy thông tin user
         UserEntity user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with ID: " + userId));
 
-        // 2. Lấy giỏ hàng của user (qua CartService để đảm bảo logic nhất quán)
-        CartResponse cart = cartService.getCartByUserId(userId); // Lấy CartResponse
+        CartResponse cart = cartService.getCartByUserId(userId);
         if (CollectionUtils.isEmpty(cart.getItems())) {
             log.warn("Cannot create order: Cart is empty for user ID: {}", userId);
             throw new InvalidDataException("Cannot create order from an empty cart.");
         }
 
-        // 3. Lấy thông tin địa chỉ
         AddressEntity shippingAddress = addressRepository.findById(request.getShippingAddressId())
                 .orElseThrow(() -> new ResourceNotFoundException("Shipping address not found with ID: " + request.getShippingAddressId()));
-        // Kiểm tra xem địa chỉ có thuộc user không (quan trọng về bảo mật)
         if (!shippingAddress.getUser().getId().equals(userId)) {
-            log.error("Security violation: User {} attempting to use address ID {} belonging to user {}", userId, request.getShippingAddressId(), shippingAddress.getUser().getId());
+            log.error("Security violation: User {} trying to use address ID {}", userId, request.getShippingAddressId());
             throw new InvalidDataException("Invalid shipping address specified.");
         }
 
-        AddressEntity billingAddress = null;
-        if (request.getBillingAddressId() != null) {
+        AddressEntity billingAddress = shippingAddress; // Mặc định
+        if (request.getBillingAddressId() != null && !request.getBillingAddressId().equals(request.getShippingAddressId())) {
             billingAddress = addressRepository.findById(request.getBillingAddressId())
                     .orElseThrow(() -> new ResourceNotFoundException("Billing address not found with ID: " + request.getBillingAddressId()));
             if (!billingAddress.getUser().getId().equals(userId)) {
-                log.error("Security violation: User {} attempting to use billing address ID {} belonging to user {}", userId, request.getBillingAddressId(), billingAddress.getUser().getId());
+                log.error("Security violation: User {} trying to use billing address ID {}", userId, request.getBillingAddressId());
                 throw new InvalidDataException("Invalid billing address specified.");
             }
-        } else {
-            billingAddress = shippingAddress; // Mặc định giống địa chỉ giao hàng
         }
 
-        // 4. Tạo OrderEntity ban đầu
         OrderEntity order = new OrderEntity();
         order.setUser(user);
-        order.setOrderCode(generateOrderCode()); // Tạo mã đơn hàng duy nhất
-        order.setOrderDate(new Date()); // Ngày giờ hiện tại
-        order.setStatus(OrderStatus.PENDING); // Trạng thái chờ xử lý
+        order.setOrderCode(generateOrderCode());
+        order.setOrderDate(new Date());
+        order.setStatus(OrderStatus.PENDING);
         order.setPaymentMethod(request.getPaymentMethod());
-        order.setPaymentStatus(PaymentStatus.PENDING); // Chờ thanh toán
+        order.setPaymentStatus(PaymentStatus.PENDING);
         order.setShippingAddress(shippingAddress);
         order.setBillingAddress(billingAddress);
         order.setNotes(request.getNotes());
-        order.setOrderItems(new HashSet<>()); // Khởi tạo Set rỗng
+        order.setOrderItems(new HashSet<>());
 
         BigDecimal totalOrderAmount = BigDecimal.ZERO;
-        List<ProductEntity> productsToUpdateStock = new ArrayList<>(); // List để cập nhật tồn kho sau
+        List<ProductEntity> productsToUpdateStock = new ArrayList<>();
+        List<Map<String, Object>> orderItemsForEmail = new ArrayList<>(); // << Chuẩn bị list item cho email
 
-        // 5. Xử lý từng mục trong giỏ hàng -> Tạo OrderItemEntity và Kiểm tra/Giảm tồn kho
         for (CartItemResponse cartItem : cart.getItems()) {
             Long productId = cartItem.getProductId();
             Integer quantityToOrder = cartItem.getQuantity();
-            Lock productLock = getProductLock(productId); // Lấy lock cho sản phẩm này
-            productLock.lock(); // Khóa sản phẩm
+            Lock productLock = getProductLock(productId);
+            productLock.lock();
             try {
-                // Fetch lại sản phẩm MỚI NHẤT từ DB bên trong transaction và lock
                 ProductEntity product = productRepository.findById(productId)
                         .orElseThrow(() -> new ResourceNotFoundException("Product not found with ID: " + productId + " during order creation."));
 
-                // Kiểm tra tồn kho MỘT LẦN NỮA (quan trọng vì có thể có thay đổi)
                 if (product.getStockQuantity() < quantityToOrder) {
                     log.warn("Order creation failed: Not enough stock for product ID {}. Requested: {}, Available: {}", productId, quantityToOrder, product.getStockQuantity());
                     throw new InvalidDataException("Not enough stock available for product: " + product.getName());
                 }
 
-                // Giảm số lượng tồn kho
                 int newStock = product.getStockQuantity() - quantityToOrder;
                 product.setStockQuantity(newStock);
-                productsToUpdateStock.add(product); // Thêm vào list để save lát nữa
+                productsToUpdateStock.add(product);
 
-                // Tạo OrderItemEntity
                 OrderItemEntity orderItem = new OrderItemEntity();
-                orderItem.setOrder(order); // Liên kết với Order
+                orderItem.setOrder(order);
                 orderItem.setProduct(product);
                 orderItem.setQuantity(quantityToOrder);
-                orderItem.setPriceAtOrder(product.getPrice()); // Lấy giá HIỆN TẠI của sản phẩm
-                orderItem.setSubtotal(product.getPrice().multiply(BigDecimal.valueOf(quantityToOrder)));
+                orderItem.setPriceAtOrder(product.getPrice());
+                BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(quantityToOrder)); // Tính subtotal
+                orderItem.setSubtotal(subtotal); // Lưu subtotal vào item
 
-                order.getOrderItems().add(orderItem); // Thêm vào Set của Order
-                totalOrderAmount = totalOrderAmount.add(orderItem.getSubtotal());
+                order.getOrderItems().add(orderItem);
+                totalOrderAmount = totalOrderAmount.add(subtotal); // Cộng dồn subtotal
+
+                // << THÊM ITEM VÀO LIST CHO EMAIL >>
+                Map<String, Object> itemMapForEmail = new HashMap<>();
+                itemMapForEmail.put("productName", product.getName()); // Key phải khớp template {{ item.productName }}
+                itemMapForEmail.put("productSku", product.getSku()); // Key phải khớp template {{ item.productSku }}
+                itemMapForEmail.put("quantity", quantityToOrder);    // Key phải khớp template {{ item.quantity }}
+                itemMapForEmail.put("subTotal", formatCurrency(subtotal)); // Key phải khớp template {{ item.subTotal }} - Format tiền tệ
+                // Lấy ảnh (nếu có)
+                String imageUrl = null;
+                List<String> imageUrls = product.getImageURLs();
+                if (imageUrls != null && !imageUrls.isEmpty()) {
+                    imageUrl = imageUrls.get(0);
+                }
+                itemMapForEmail.put("productImageUrl", imageUrl != null ? imageUrl : "https://via.placeholder.com/70x70.png?text=N/A"); // {{ item.productImageUrl }}
+                orderItemsForEmail.add(itemMapForEmail);
+                // << KẾT THÚC THÊM ITEM CHO EMAIL >>
 
             } finally {
-                productLock.unlock(); // Luôn mở khóa sản phẩm
+                productLock.unlock();
             }
         }
 
-        // 6. Cập nhật tổng tiền cho đơn hàng
         order.setTotalAmount(totalOrderAmount);
 
-        // 7. Lưu đơn hàng (Cascade sẽ lưu cả OrderItems)
         OrderEntity savedOrder = orderRepository.save(order);
         log.info("Order entity and items saved successfully. Order ID: {}", savedOrder.getId());
 
-        // 8. Cập nhật tồn kho cho các sản phẩm (sau khi order đã chắc chắn được lưu)
         if (!productsToUpdateStock.isEmpty()) {
             log.info("Updating stock for {} products.", productsToUpdateStock.size());
-            productRepository.saveAllAndFlush(productsToUpdateStock); // Save và flush để cập nhật ngay
+            productRepository.saveAllAndFlush(productsToUpdateStock);
             log.info("Stock updated successfully.");
         }
 
-        // 9. Xóa giỏ hàng của người dùng
         log.info("Clearing cart for user ID: {}", userId);
-        cartService.clearCart(userId); // Gọi service để xóa cart
+        cartService.clearCart(userId);
 
-        // 10. Map và trả về kết quả
+        // << GỌI HÀM GỬI EMAIL SAU KHI MỌI THỨ THÀNH CÔNG >>
+        sendOrderConfirmationEmail(savedOrder, orderItemsForEmail); // Truyền cả list item đã chuẩn bị
+
         return mapOrderToResponse(savedOrder);
     }
 
+    // << TÁCH RIÊNG HÀM GỬI MAIL >>
+    // << CÓ THỂ THÊM @Async Ở ĐÂY NẾU ĐÃ CẤU HÌNH >>
+    // @Async
+    public void sendOrderConfirmationEmail(OrderEntity order, List<Map<String, Object>> orderItemsForEmail) {
+        try {
+            log.info("Attempting to send order confirmation email for Order ID: {}", order.getId());
+            UserEntity customer = order.getUser();
+            if (customer == null || customer.getEmail() == null) {
+                log.error("Cannot send confirmation email for order {}: Customer or email is null.", order.getId());
+                return;
+            }
+
+            // === Chuẩn bị Params ===
+            Map<String, Object> emailParams = new HashMap<>();
+            emailParams.put("customer_name", customer.getFirstName() != null ? customer.getFirstName() : customer.getUsername()); // {{ params.customer_name }}
+            emailParams.put("customer_email", customer.getEmail());               // {{ params.customer_email }}
+            emailParams.put("order_code", order.getOrderCode());                 // {{ params.order_code }}
+            emailParams.put("order_date", formatDate(order.getOrderDate()));     // {{ params.order_date }}
+            emailParams.put("total_amount", formatCurrency(order.getTotalAmount())); // {{ params.total_amount }}
+            emailParams.put("shipping_address", formatAddressForEmail(order.getShippingAddress())); // {{ params.shipping_address }}
+            emailParams.put("payment_method", order.getPaymentMethod().name());  // {{ params.payment_method }}
+            emailParams.put("order_items", orderItemsForEmail);                 // {{ params.order_items }} - List Map đã chuẩn bị
+
+            // Các tham số mặc định/link khác
+            emailParams.put("service_name", defaultServiceName); // {{ params.service_name }}
+            emailParams.put("company_name", defaultCompanyName); // {{ params.company_name }}
+            emailParams.put("company_address", "Địa chỉ PETSHOP của anh"); // {{ params.company_address }} - Thay bằng địa chỉ thật
+            emailParams.put("support_email", defaultSupportEmail); // {{ params.support_email }}
+            emailParams.put("support_phone", defaultSupportPhone); // {{ params.support_phone }}
+            // Thay bằng các link thật của anh
+            emailParams.put("shop_link", "http://localhost:5173"); // {{ params.shop_link }}
+            emailParams.put("policy_link", "http://localhost:5173/policy"); // {{ params.policy_link }}
+            emailParams.put("contact_link", "http://localhost:5173/contact"); // {{ params.contact_link }}
+            emailParams.put("view_order_link", "http://localhost:5173/my-orders/" + order.getId()); // {{ params.view_order_link }}
+            emailParams.put("track_order_link", "#"); // {{ params.track_order_link }} - Thay bằng link thật nếu có
+            emailParams.put("unsubscribe_link", "#"); // {{ params.unsubscribe_link }} - Thay bằng link thật nếu có
+
+            // === Lấy Template ID ===
+            // !! QUAN TRỌNG: THAY BẰNG ID THỰC TẾ CỦA TEMPLATE XÁC NHẬN ĐƠN HÀNG TRÊN BREVO !!
+            Long orderConfirmationTemplateId = 4L; // <<< ANH PHẢI THAY SỐ NÀY
+
+            // === Gọi Service Gửi Mail ===
+            brevoEmailService.sendEmailWithTemplate(
+                    customer.getEmail(),
+                    orderConfirmationTemplateId,
+                    emailParams
+            );
+            log.info("Order confirmation email sent successfully to {} for Order ID {}", customer.getEmail(), order.getId());
+
+        } catch (Exception e) {
+            // Chỉ log lỗi, không làm crash luồng chính
+            log.error("Failed to send order confirmation email for Order ID {}: {}", order.getId(), e.getMessage(), e);
+            // Có thể thêm cơ chế retry hoặc thông báo cho admin
+        }
+    }
+
+    // << HÀM HELPER FORMAT ĐỊA CHỈ >>
+    private String formatAddressForEmail(AddressEntity address) {
+        if (address == null) return "N/A";
+        List<String> parts = new ArrayList<>();
+        if (address.getApartmentNumber() != null && !address.getApartmentNumber().isBlank()) parts.add(address.getApartmentNumber());
+        if (address.getStreet() != null && !address.getStreet().isBlank()) parts.add(address.getStreet());
+        if (address.getWard() != null && !address.getWard().isBlank()) parts.add(address.getWard());
+        if (address.getDistrict() != null && !address.getDistrict().isBlank()) parts.add(address.getDistrict());
+        if (address.getCity() != null && !address.getCity().isBlank()) parts.add(address.getCity());
+        // if (address.getCountry() != null && !address.getCountry().isBlank()) parts.add(address.getCountry());
+        return String.join(", ", parts);
+    }
+
+    // << HÀM HELPER FORMAT TIỀN TỆ (VÍ DỤ VND) >>
+    private String formatCurrency(BigDecimal amount) {
+        if (amount == null) return "0 ₫";
+        // Locale("vi", "VN") để format theo kiểu Việt Nam
+        NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(new Locale("vi", "VN"));
+        return currencyFormatter.format(amount);
+    }
+
+    // << HÀM HELPER FORMAT NGÀY THÁNG (VÍ DỤ dd/MM/yyyy) >>
+    private String formatDate(Date date) {
+        if (date == null) return "N/A";
+        // Anh có thể chọn định dạng khác nếu muốn
+        SimpleDateFormat dateFormatter = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+        return dateFormatter.format(date);
+    }
+
+
+    // --- Các phương thức khác (getOrdersByUserId, getOrderDetails, ...) giữ nguyên như trước ---
     @Override
     @Transactional(readOnly = true)
     public Page<OrderResponse> getOrdersByUserId(Long userId, Pageable pageable) {
         log.info("Fetching orders for user ID: {}, page: {}, size: {}", userId, pageable.getPageNumber(), pageable.getPageSize());
-        // Kiểm tra user tồn tại nếu cần
         if (!userRepository.existsById(userId)) {
             throw new ResourceNotFoundException("User not found with ID: " + userId);
         }
-
         Page<OrderEntity> orderPage = orderRepository.findByUserIdOrderByOrderDateDesc(userId, pageable);
         log.info("Found {} orders for user ID {} on page {}", orderPage.getNumberOfElements(), userId, pageable.getPageNumber());
-
-        // Map Page<Entity> sang Page<Response>
         List<OrderResponse> orderResponses = orderPage.getContent().stream()
                 .map(this::mapOrderToResponse)
                 .collect(Collectors.toList());
-
         return new PageImpl<>(orderResponses, pageable, orderPage.getTotalElements());
     }
 
@@ -263,25 +370,17 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderResponse getOrderDetails(Long orderId, Long userId) {
         log.info("Fetching order details for Order ID: {}, User ID: {}", orderId, userId);
-        // Tìm order và đảm bảo nó thuộc về user này (hoặc user là admin - cần logic role check)
-        // TODO: Thêm logic kiểm tra quyền (ví dụ: admin có thể xem mọi đơn hàng)
         OrderEntity order = orderRepository.findByIdAndUserId(orderId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId + " for this user."));
-
-        // Nạp OrderItems nếu LAZY
-        // Hibernate.initialize(order.getOrderItems());
-
         return mapOrderToResponse(order);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<OrderResponse> getAllOrders(Pageable pageable /*, filters */) {
-        // TODO: Thêm logic kiểm tra quyền ADMIN ở đây (ví dụ dùng Spring Security @PreAuthorize)
+    public Page<OrderResponse> getAllOrders(Pageable pageable) {
         log.info("ADMIN: Fetching all orders, page: {}, size: {}", pageable.getPageNumber(), pageable.getPageSize());
-        Page<OrderEntity> orderPage = orderRepository.findAll(pageable); // Thêm Specification nếu cần filter
+        Page<OrderEntity> orderPage = orderRepository.findAll(pageable);
         log.info("ADMIN: Found {} total orders on page {}", orderPage.getNumberOfElements(), pageable.getPageNumber());
-
         List<OrderResponse> orderResponses = orderPage.getContent().stream()
                 .map(this::mapOrderToResponse)
                 .collect(Collectors.toList());
@@ -291,57 +390,94 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderResponse updateOrderStatus(Long orderId, OrderStatus newStatus) {
-        // TODO: Thêm logic kiểm tra quyền ADMIN ở đây
         log.info("ADMIN: Updating status for Order ID: {} to {}", orderId, newStatus);
         OrderEntity order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
 
-        // TODO: Thêm logic kiểm tra tính hợp lệ của việc chuyển trạng thái
-        // Ví dụ: Không thể chuyển từ DELIVERED về PENDING
-        log.info("Updating order {} status from {} to {}", order.getOrderCode(), order.getStatus(), newStatus);
+        OrderStatus oldStatus = order.getStatus(); // Lấy status cũ để kiểm tra nếu cần
+
+        if (oldStatus == newStatus) {
+            log.warn("ADMIN: Order ID {} already has status {}. No update performed.", orderId, newStatus);
+            return mapOrderToResponse(order); // Không cần làm gì thêm
+        }
+
+        log.info("Updating order {} status from {} to {}", order.getOrderCode(), oldStatus, newStatus);
         order.setStatus(newStatus);
+        OrderEntity updatedOrder = orderRepository.save(order); // Lưu trạng thái mới
 
-        // Xử lý thêm nếu cần (vd: cập nhật PaymentStatus khi đơn hàng SHIPPED/DELIVERED?)
+        // *** GỌI HÀM GỬI EMAIL THÔNG BÁO CẬP NHẬT TRẠNG THÁI ***
+        sendOrderStatusUpdateEmail(updatedOrder); // Gửi email sau khi đã lưu thành công
 
-        OrderEntity updatedOrder = orderRepository.save(order);
         return mapOrderToResponse(updatedOrder);
     }
+    public void sendOrderStatusUpdateEmail(OrderEntity order) {
+        try {
+            UserEntity customer = order.getUser();
+            if (customer == null || customer.getEmail() == null) {
+                log.error("Cannot send status update email for order {}: Customer or email is null.", order.getId());
+                return;
+            }
 
+            // Lấy trạng thái mới dưới dạng text dễ hiểu
+            String newStatusText = mapOrderStatusToText(order.getStatus());
+            // Lấy thời gian cập nhật (tùy chọn)
+            // LocalDateTime updateTime = LocalDateTime.now();
+            // DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss dd/MM/yyyy");
+            // String formattedUpdateTime = updateTime.format(formatter);
+
+            log.info("Attempting to send order status update email for Order ID: {} to status '{}'", order.getId(), newStatusText);
+
+            // === Chuẩn bị Params ===
+            Map<String, Object> emailParams = new HashMap<>();
+            emailParams.put("customer_name", customer.getFirstName() != null ? customer.getFirstName() : customer.getUsername()); // {{ params.customer_name }}
+            emailParams.put("order_code", order.getOrderCode());             // {{ params.order_code }}
+            emailParams.put("new_status_text", newStatusText);             // {{ params.new_status_text }} - Trạng thái mới dạng text
+            emailParams.put("view_order_link", "http://localhost:5173/my-orders/" + order.getId()); // {{ params.view_order_link }} - Sửa lại link cho đúng
+
+            // Các tham số mặc định/link khác (tùy chọn, có thể đã có trong template)
+            emailParams.put("service_name", defaultServiceName);        // {{ params.service_name }}
+            emailParams.put("company_name", defaultCompanyName);       // {{ params.company_name }}
+            emailParams.put("support_email", defaultSupportEmail);      // {{ params.support_email }}
+            emailParams.put("support_phone", defaultSupportPhone);      // {{ params.support_phone }}
+            // emailParams.put("update_time", formattedUpdateTime);      // {{ params.update_time }} - Nếu muốn thêm thời gian cập nhật
+
+            // === Gọi Service Gửi Mail ===
+            brevoEmailService.sendEmailWithTemplate(
+                    customer.getEmail(),
+                    7L, // ID của template mới
+                    emailParams
+            );
+            log.info("Order status update email sent successfully to {} for Order ID {}", customer.getEmail(), order.getId());
+
+        } catch (Exception e) {
+            // Chỉ log lỗi, không làm crash luồng chính
+            log.error("Failed to send order status update email for Order ID {}: {}", order.getId(), e.getMessage(), e);
+        }
+    }
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderResponse cancelOrder(Long orderId, Long userId) {
         log.info("User ID {} attempting to cancel Order ID: {}", userId, orderId);
         OrderEntity order = orderRepository.findByIdAndUserId(orderId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId + " for this user."));
-
-        // Kiểm tra xem có được phép hủy không
         if (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.PROCESSING) {
             log.warn("Cannot cancel order ID {}: Status is already {}", orderId, order.getStatus());
             throw new InvalidDataException("Order cannot be cancelled because its status is: " + order.getStatus());
         }
-
-        // TODO (Tùy chọn): Hoàn lại số lượng sản phẩm vào kho
-        // boolean stockRestored = restoreStockForOrder(order);
-        // if (!stockRestored) { /* Xử lý lỗi hoàn kho */ }
-
         order.setStatus(OrderStatus.CANCELLED);
-        // Cập nhật cả PaymentStatus nếu cần (ví dụ: thành REFUNDED nếu đã thanh toán)
-        // order.setPaymentStatus(PaymentStatus.REFUNDED);
-
         OrderEntity cancelledOrder = orderRepository.save(order);
+        // << CÓ THỂ GỬI EMAIL THÔNG BÁO HỦY ĐƠN Ở ĐÂY >>
+        // sendOrderCancellationEmail(cancelledOrder);
         log.info("Order ID {} cancelled successfully by user ID {}", orderId, userId);
         return mapOrderToResponse(cancelledOrder);
     }
 
-    // Helper để tạo mã đơn hàng duy nhất (ví dụ đơn giản)
     private String generateOrderCode() {
-        // Ví dụ: "ORD-" + NămThángNgàyGiờPhútGiây + SốNgẫuNhiên
-        // Cần đảm bảo tính duy nhất cao hơn trong môi trường thực tế
         return "ORD-" + System.currentTimeMillis();
     }
 
-    // TODO (Tùy chọn): Implement logic hoàn kho khi hủy đơn
     private boolean restoreStockForOrder(OrderEntity order) {
+        // Giữ nguyên logic này
         log.info("Attempting to restore stock for cancelled order ID: {}", order.getId());
         try {
             for (OrderItemEntity item : order.getOrderItems()) {
@@ -363,9 +499,19 @@ public class OrderServiceImpl implements OrderService {
             return true;
         } catch (Exception e) {
             log.error("Failed to restore stock completely for order ID {}: {}", order.getId(), e.getMessage(), e);
-            // Có thể cần cơ chế retry hoặc thông báo lỗi đặc biệt
             return false;
         }
     }
-
+    private String mapOrderStatusToText(OrderStatus status) {
+        if (status == null) return "Không xác định";
+        return switch (status) {
+            case PENDING -> "Chờ xác nhận";
+            case PROCESSING -> "Đang xử lý";
+            case SHIPPED -> "Đang giao hàng";
+            case DELIVERED -> "Đã giao thành công";
+            case CANCELLED -> "Đã hủy";
+            case RETURNED -> "Đã hoàn trả";
+            default -> status.name(); // Trả về tên enum nếu chưa định nghĩa text
+        };
+    }
 }
