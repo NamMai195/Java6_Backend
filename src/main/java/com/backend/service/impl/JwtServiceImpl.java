@@ -1,8 +1,8 @@
 package com.backend.service.impl;
 
-import com.backend.common.TokenType; // Giữ lại package đúng của bạn
-import com.backend.exception.InvalidDataException; // Giữ lại package đúng của bạn
-import com.backend.service.JwtService; // Giữ lại package đúng của bạn
+import com.backend.common.TokenType;
+import com.backend.exception.InvalidDataException;
+import com.backend.service.JwtService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.Jwts;
@@ -14,9 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.userdetails.UserDetails; // Import UserDetails
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils; // Import StringUtils
+import org.springframework.util.StringUtils;
 
 import java.security.Key;
 import java.util.Collection;
@@ -25,10 +25,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
-// Import static trực tiếp từ package đúng của bạn
 import static com.backend.common.TokenType.ACCESS_TOKEN;
 import static com.backend.common.TokenType.REFRESH_TOKEN;
-
 
 @Service
 @Slf4j(topic = "JWT-SERVICE")
@@ -52,7 +50,6 @@ public class JwtServiceImpl implements JwtService {
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
-        // Giống ví dụ: Đưa trực tiếp Collection vào claims
         claims.put("role", authorities);
 
         return generateToken(claims, username);
@@ -60,12 +57,10 @@ public class JwtServiceImpl implements JwtService {
 
     @Override
     public String generateRefreshToken(long userId, String username, Collection<? extends GrantedAuthority> authorities) {
-        // Sửa log giống ví dụ
-        log.info("Generate refresh token");
+        log.info("Generate refresh token for user {}", userId); // Made log more specific
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
-        // Giống ví dụ: Đưa trực tiếp Collection vào claims
         claims.put("role", authorities);
 
         return generateRefreshToken(claims, username);
@@ -76,39 +71,38 @@ public class JwtServiceImpl implements JwtService {
         try {
             return extractClaim(token, type, Claims::getSubject);
         } catch (ExpiredJwtException e) {
-            log.warn("Attempted to extract username from expired {} token", type);
-            // Trả về username từ token hết hạn nếu cần cho logic nào đó,
-            // hoặc ném lại lỗi / trả về null tùy yêu cầu.
-            // Ví dụ: return e.getClaims().getSubject();
-            return null; // Hoặc ném lại lỗi nếu không muốn xử lý token hết hạn ở đây
+            // If the token is expired, we might still want the username for refresh logic,
+            // but for general validation, returning null or throwing is appropriate.
+            // Let's return null for now, assuming validation handles this.
+            log.warn("Attempted to extract username from expired {} token for subject", type);
+            return null;
         } catch (Exception e) {
             log.error("Error extracting username from {} token: {}", type, e.getMessage());
-            return null;
+            return null; // Return null on other extraction errors
         }
     }
 
-    // *** PHƯƠNG THỨC CẦN VIẾT TIẾP ***
-    // Có thể thêm UserDetails để kiểm tra xem username trong token có khớp với UserDetails không
+    @Override // Added missing @Override annotation
     public boolean isTokenValid(String token, TokenType tokenType, UserDetails userDetails) {
         log.info("Validating {} token for user {}", tokenType, userDetails.getUsername());
         try {
             final String username = extractUsername(token, tokenType);
-            // Kiểm tra username từ token có khớp và token chưa hết hạn
+            // Check if username matches and token is not expired
             boolean isValid = username != null && username.equals(userDetails.getUsername()) && !isTokenExpired(token, tokenType);
             log.info("Token validation result for user {}: {}", userDetails.getUsername(), isValid);
             return isValid;
         } catch (AccessDeniedException e) {
-            // Lỗi AccessDeniedException từ extractUsername (do extraAllClaims ném ra)
-            log.warn("Token validation failed for user {}: {}", userDetails.getUsername(), e.getMessage());
+            // This can be thrown by extractAllClaims if parsing fails (e.g., signature mismatch)
+            log.warn("Token validation failed for user {} (Access Denied): {}", userDetails.getUsername(), e.getMessage());
             return false;
         } catch (Exception e) {
-            // Các lỗi khác không mong muốn
-            log.error("Unexpected error during token validation for user {}: {}", userDetails.getUsername(), e.getMessage());
+            // Catch any other unexpected errors during validation
+            log.error("Unexpected error during token validation for user {}: {}", userDetails.getUsername(), e.getMessage(), e); // Log exception details
             return false;
         }
     }
 
-    // Phương thức helper để kiểm tra token hết hạn
+    // Helper method to check if the token is expired
     private boolean isTokenExpired(String token, TokenType type) {
         try {
             Date expiration = extractClaim(token, type, Claims::getExpiration);
@@ -118,84 +112,78 @@ public class JwtServiceImpl implements JwtService {
             }
             return isExpired;
         } catch (ExpiredJwtException e) {
-            // Nếu extractClaim ném ExpiredJwtException thì chắc chắn đã hết hạn
-            log.warn("{} token is confirmed expired (caught ExpiredJwtException)", type);
+            // If extractClaim itself throws ExpiredJwtException, it's definitely expired
+            log.warn("{} token is confirmed expired (caught ExpiredJwtException during expiration check)", type);
             return true;
-        } catch (Exception e){
-            // Nếu có lỗi khác khi lấy expiration, coi như không hợp lệ
-            log.error("Could not determine expiration for {} token: {}", type, e.getMessage());
-            return true; // Coi như hết hạn/không hợp lệ nếu không lấy được ngày hết hạn
+        } catch (Exception e) {
+            // If any other error occurs while getting expiration, treat as invalid/expired
+            log.error("Could not determine expiration for {} token: {}", type, e.getMessage(), e);
+            return true; // Treat as expired/invalid if expiration cannot be determined
         }
     }
 
 
-    // === PHẦN CÒN LẠI GIỮ NGUYÊN NHƯNG SỬA LỖI CHÍNH TẢ ===
-
     private String generateToken(Map<String, Object> claims, String username) {
-        log.info("----------[ generateToken ]----------");
+        log.debug("Generating access token for subject: {}", username); // Changed to debug level
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(username)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
                 .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * expiryMinutes))
-                // Truyền ACCESS_TOKEN trực tiếp
                 .signWith(getKey(ACCESS_TOKEN), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     private String generateRefreshToken(Map<String, Object> claims, String username) {
-        log.info("----------[ generateRefreshToken ]----------");
+        log.debug("Generating refresh token for subject: {}", username); // Changed to debug level
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(username)
                 .setIssuedAt(new Date(System.currentTimeMillis()))
                 .setExpiration(new Date(System.currentTimeMillis() + 1000 * 60 * 60 * 24 * expiryDay))
-                // Truyền REFRESH_TOKEN trực tiếp
                 .signWith(getKey(REFRESH_TOKEN), SignatureAlgorithm.HS256)
                 .compact();
     }
 
     private Key getKey(TokenType type) {
-        log.info("----------[ getKey ]----------");
-        // Dùng switch expression (->)
+        log.debug("Retrieving signing key for token type: {}", type); // Changed to debug level
         switch (type) {
             case ACCESS_TOKEN -> {
+                if (!StringUtils.hasText(accessKey)) throw new InvalidDataException("Access key is not configured");
                 return Keys.hmacShaKeyFor(Decoders.BASE64.decode(accessKey));
             }
             case REFRESH_TOKEN -> {
+                 if (!StringUtils.hasText(refreshKey)) throw new InvalidDataException("Refresh key is not configured");
                 return Keys.hmacShaKeyFor(Decoders.BASE64.decode(refreshKey));
             }
-            // Ném InvalidDataException
-            default -> throw new InvalidDataException("Invalid token type");
+            default -> throw new InvalidDataException("Invalid token type specified for key retrieval");
         }
     }
 
     private <T> T extractClaim(String token, TokenType type, Function<Claims, T> claimResolver) {
-        log.info("----------[ extractClaim ]----------");
-        // Gọi phương thức đã sửa lỗi chính tả "extractAllClaims"
+        log.debug("Extracting claim using provided resolver for token type: {}", type); // Changed to debug level
         final Claims claims = extractAllClaims(token, type);
         return claimResolver.apply(claims);
     }
 
-    // Sửa lỗi chính tả "extraAllClaim" thành "extractAllClaims"
     private Claims extractAllClaims(String token, TokenType type) {
-        log.info("----------[ extractAllClaims ]----------"); // Sửa log
+         log.debug("Parsing all claims for token type: {}", type); // Changed to debug level
         try {
             return Jwts.parserBuilder().setSigningKey(getKey(type)).build().parseClaimsJws(token).getBody();
-        } catch (SignatureException | ExpiredJwtException e) { // Invalid signature or expired token
-            // Ném AccessDeniedException với message gốc
-            log.warn("Failed to parse {} token: {}", type, e.getMessage());
-            throw new AccessDeniedException("Access denied: " + e.getMessage());
-        } catch (Exception e) {
-            // Bắt các lỗi parsing khác
-            log.error("Unexpected error parsing {} token: {}", type, e.getMessage());
-            throw new AccessDeniedException("Access denied: Invalid token format or other parsing error.");
+        } catch (SignatureException e) {
+            log.warn("Invalid JWT signature for {} token: {}", type, e.getMessage());
+            throw new AccessDeniedException("Access denied: Invalid signature");
+        } catch (ExpiredJwtException e) {
+             log.warn("Expired JWT {} token: {}", type, e.getMessage());
+             // Re-throw specifically for handling expiration if needed upstream,
+             // otherwise AccessDeniedException is also suitable. Let's keep AccessDenied for consistency here.
+             // throw e;
+             throw new AccessDeniedException("Access denied: Token expired");
+        } catch (Exception e) { // Catch other parsing exceptions (MalformedJwtException, UnsupportedJwtException, etc.)
+            log.error("Error parsing {} token: {}", type, e.getMessage(), e);
+            throw new AccessDeniedException("Access denied: Invalid token");
         }
     }
 
-    // *** XÓA PHIÊN BẢN isTokenValid CŨ TRẢ VỀ FALSE ***
-    // @Override
-    // public boolean isTokenValid(String token, TokenType tokenType) {
-    //     return false;
-    // }
+    // Removed commented out old isTokenValid method
 }

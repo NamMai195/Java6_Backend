@@ -1,4 +1,6 @@
 package com.backend.service;
+
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import sendinblue.ApiClient;
@@ -16,12 +18,20 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@Slf4j(topic = "BREVO-EMAIL-SERVICE")
 public class BrevoEmailService {
 
     @Value("${brevo.api-key}")
     private String apiKey;
 
+    @Value("${brevo.sender-email}")
+    private String senderEmail;
+
+    @Value("${brevo.sender-name}")
+    private String senderName;
+
     public void sendEmail(String toEmail, String subject, String content) throws ApiException {
+        log.info("Attempting to send plain email to {} with subject '{}'", toEmail, subject);
         ApiClient defaultClient = Configuration.getDefaultApiClient();
         ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("api-key");
         apiKeyAuth.setApiKey(apiKey);
@@ -30,13 +40,13 @@ public class BrevoEmailService {
         SendSmtpEmail sendSmtpEmail = new SendSmtpEmail();
 
         SendSmtpEmailSender sender = new SendSmtpEmailSender();
-        sender.setEmail("mnam3239@gmail.com"); // Email người gửi
-        sender.setName("Nam Mai"); // Tên người gửi
+        sender.setEmail(senderEmail); // Use configured sender email
+        sender.setName(senderName);   // Use configured sender name
         sendSmtpEmail.setSender(sender);
 
         List<SendSmtpEmailTo> to = new ArrayList<>();
         SendSmtpEmailTo toEmailAddress = new SendSmtpEmailTo();
-        toEmailAddress.setEmail(toEmail); // Email người nhận
+        toEmailAddress.setEmail(toEmail); // Recipient email
         to.add(toEmailAddress);
         sendSmtpEmail.setTo(to);
 
@@ -45,14 +55,16 @@ public class BrevoEmailService {
 
         try {
             apiInstance.sendTransacEmail(sendSmtpEmail);
-            System.out.println("Email sent successfully!");
+            log.info("Plain email sent successfully to {}", toEmail);
         } catch (ApiException e) {
-            System.err.println("Exception when calling TransactionalEmailsApi#sendTransacEmail");
-            e.printStackTrace();
+            log.error("Exception sending plain email to {}: Code={}, Body={}, Headers={}",
+                    toEmail, e.getCode(), e.getResponseBody(), e.getResponseHeaders(), e);
             throw e;
         }
     }
+
     public void sendEmailWithTemplate(String toEmail, Long templateId, Map<String, Object> params) throws ApiException {
+        log.info("Attempting to send template email (ID: {}) to {} with params: {}", templateId, toEmail, params);
         ApiClient defaultClient = Configuration.getDefaultApiClient();
         ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("api-key");
         apiKeyAuth.setApiKey(apiKey);
@@ -60,40 +72,34 @@ public class BrevoEmailService {
         TransactionalEmailsApi apiInstance = new TransactionalEmailsApi();
         SendSmtpEmail sendSmtpEmail = new SendSmtpEmail();
 
-        // Cân nhắc đưa thông tin người gửi vào application.properties
         SendSmtpEmailSender sender = new SendSmtpEmailSender();
-        sender.setEmail("mnam3239@gmail.com"); // Email người gửi (NÊN LÀ EMAIL ĐÃ XÁC THỰC TRÊN BREVO)
-        sender.setName("Nam Mai"); // Tên người gửi
+        sender.setEmail(senderEmail); // Use configured sender email
+        sender.setName(senderName);   // Use configured sender name
         sendSmtpEmail.setSender(sender);
 
-        // --- Thông tin người nhận ---
+        // Recipient info
         List<SendSmtpEmailTo> toList = new ArrayList<>();
         SendSmtpEmailTo recipient = new SendSmtpEmailTo();
         recipient.setEmail(toEmail);
-        // recipient.setName("Tên người nhận nếu có"); // Tùy chọn: đặt tên người nhận
+        // Optional: recipient.setName("Recipient Name");
         toList.add(recipient);
         sendSmtpEmail.setTo(toList);
 
-        // --- Chỉ định Template ID và Tham số ---
+        // Template ID and Parameters
         sendSmtpEmail.setTemplateId(templateId);
-        sendSmtpEmail.setParams(params); // Truyền Map tham số vào đây
+        sendSmtpEmail.setParams(params); // Pass the parameters map
 
-        // Lưu ý: KHÔNG setSubject() hoặc setHtmlContent() ở đây, vì chúng sẽ được lấy từ template.
-        // Nếu bạn setSubject(), nó sẽ ghi đè chủ đề của template.
+        // Note: Do not set subject or htmlContent here, they come from the template.
+        // Setting subject here would override the template's subject.
 
         try {
-            // Gọi API để gửi email giao dịch
             apiInstance.sendTransacEmail(sendSmtpEmail);
-            System.out.println("Email (Template ID: " + templateId + ") sent successfully to " + toEmail);
+            log.info("Template email (ID: {}) sent successfully to {}", templateId, toEmail);
         } catch (ApiException e) {
-            System.err.println("Exception when calling TransactionalEmailsApi#sendTransacEmail (Template ID: " + templateId + ")");
-            System.err.println("Status code: " + e.getCode());
-            System.err.println("Reason: " + e.getResponseBody());
-            System.err.println("Response headers: " + e.getResponseHeaders());
-            e.printStackTrace();
-            throw e; // Re-throw để lớp gọi có thể xử lý
+            log.error("Exception sending template email (ID: {}) to {}: Code={}, Body={}, Headers={}",
+                    templateId, toEmail, e.getCode(), e.getResponseBody(), e.getResponseHeaders(), e);
+            throw e; // Re-throw for the calling layer to handle
         }
     }
-
 
 }

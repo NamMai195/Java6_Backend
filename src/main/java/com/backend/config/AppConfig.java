@@ -1,10 +1,9 @@
 // src/main/java/com/backend/config/AppConfig.java
 package com.backend.config;
 
-// << THÊM IMPORT NÀY (Package có thể cần điều chỉnh) >>
 import com.backend.security.handler.OAuth2LoginSuccessHandler;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired; // << THÊM IMPORT NÀY >>
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -48,7 +47,7 @@ public class AppConfig {
                 .cors(Customizer.withDefaults()) // Enable CORS using the Bean below
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(request -> request
-                        .requestMatchers( // Public endpoints (Giữ nguyên)
+                        .requestMatchers( // Public endpoints
                                 "/auth/**",
                                 "/api/v1/users/verify",
                                 "/api/v1/users/set-initial-password",
@@ -60,56 +59,55 @@ public class AppConfig {
                                 "/webjars/**",
                                 "/swagger-resources/**",
                                 "/favicon.ico",
-                                // Đảm bảo các endpoint cho OAuth2 được permit
+                                // OAuth2 endpoints
                                 "/login**", "/oauth2/**"
                         ).permitAll()
-                        .requestMatchers(HttpMethod.GET, // Public GET endpoints (Giữ nguyên)
+                        .requestMatchers(HttpMethod.GET, // Public GET endpoints
                                 "/api/v1/products", "/api/v1/products/**",
                                 "/api/v1/categories", "/api/v1/categories/**",
                                 "/api/v1/reviews/**",
                                 "/api/v1/products/{productId}/reviews"
                         ).permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll() // Allow public registration (Giữ nguyên)
-                        .anyRequest().authenticated() // All other requests need authentication (Giữ nguyên)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/users").permitAll() // Allow public registration
+                        .anyRequest().authenticated() // All other requests need authentication
                 )
-                // << THÊM CẤU HÌNH OAUTH2 LOGIN VÀO ĐÂY >>
+                // OAuth2 Login Configuration
                 .oauth2Login(oauth2 -> oauth2
-                                .successHandler(oAuth2LoginSuccessHandler) // Chỉ định handler khi login Google thành công
-                        // .failureHandler(...) // Có thể thêm xử lý khi lỗi nếu cần
+                                .successHandler(oAuth2LoginSuccessHandler) // Specify success handler for Google login
+                        // .failureHandler(...) // Optionally add a failure handler if needed
                 )
-                // << KẾT THÚC PHẦN THÊM OAUTH2 LOGIN >>
-                .sessionManagement(manager -> manager.sessionCreationPolicy(STATELESS)) // Giữ nguyên
-                .authenticationProvider(authenticationProvider()) // Giữ nguyên
-                .addFilterBefore(requestFilter, UsernamePasswordAuthenticationFilter.class); // Giữ nguyên JWT Filter
+                .sessionManagement(manager -> manager.sessionCreationPolicy(STATELESS))
+                .authenticationProvider(authenticationProvider())
+                .addFilterBefore(requestFilter, UsernamePasswordAuthenticationFilter.class); // Add JWT Filter
 
         return http.build();
     }
 
     @Bean
-    public CorsConfigurationSource corsConfigurationSource() { // Giữ nguyên Bean này
+    public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173")); // Cho phép frontend
+        configuration.setAllowedOrigins(List.of("http://localhost:5173")); // Allow frontend origin
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", configuration); // Áp dụng cho /api/**
-        source.registerCorsConfiguration("/auth/**", configuration); // Áp dụng cho /auth/**
-        // Thêm dòng này để áp dụng cho cả OAuth2 callbacks nếu cần (thường không cần vì đã permitAll)
+        source.registerCorsConfiguration("/api/**", configuration); // Apply CORS to /api/**
+        source.registerCorsConfiguration("/auth/**", configuration); // Apply CORS to /auth/**
+        // Usually not needed for OAuth2 callbacks as they are often handled by redirects/permitAll
         // source.registerCorsConfiguration("/login/oauth2/**", configuration);
 
         return source;
     }
 
 
-    @Bean // Giữ nguyên Bean này
+    @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
     }
 
-    @Bean // Giữ nguyên Bean này
+    @Bean
     public AuthenticationProvider authenticationProvider() {
         DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
         authProvider.setUserDetailsService(userDetailsService);
@@ -117,7 +115,7 @@ public class AppConfig {
         return authProvider;
     }
 
-    @Bean // Giữ nguyên Bean này
+    @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }

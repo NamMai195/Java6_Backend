@@ -17,9 +17,6 @@ public interface ProductService {
 
     Page<ProductResponse> getAllProducts(String keyword, Long categoryId, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable);
 
-    // Có thể thêm phương thức tìm kiếm phức tạp hơn
-    // Page<ProductResponse> searchProducts(String keyword, Long categoryId, BigDecimal minPrice, BigDecimal maxPrice, Pageable pageable);
-
     ProductResponse updateProduct(Long productId, ProductUpdateRequest request);
 
     void deleteProduct(Long productId);

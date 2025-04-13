@@ -8,17 +8,16 @@ import com.backend.exception.InvalidDataException;
 import com.backend.exception.ResourceNotFoundException;
 import com.backend.model.*;
 import com.backend.repository.*;
-// << THÊM IMPORT NÀY >>
 import com.backend.service.BrevoEmailService;
 import com.backend.service.CartService;
 import com.backend.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value; // << THÊM IMPORT NÀY >>
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.scheduling.annotation.Async; // << THÊM IMPORT NÀY (Cho Async nếu dùng) >>
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
@@ -33,7 +32,7 @@ import java.util.stream.Collectors;
 
 @Service
 @Slf4j(topic = "ORDER-SERVICE")
-@RequiredArgsConstructor // Đảm bảo BrevoEmailService được inject
+@RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -43,26 +42,25 @@ public class OrderServiceImpl implements OrderService {
     private final AddressRepository addressRepository;
     private final CartService cartService;
     private final CartItemRepository cartItemRepository;
-    // << INJECT BREVO EMAIL SERVICE >>
     private final BrevoEmailService brevoEmailService;
 
-    // Sử dụng Lock để tránh race condition khi cập nhật tồn kho
+    // Using Locks to prevent race conditions when updating stock
     private final Map<Long, Lock> productLocks = new HashMap<>();
 
-    // << (TÙY CHỌN) INJECT CÁC GIÁ TRỊ MẶC ĐỊNH TỪ CONFIG >>
+    // Inject default values from configuration for email templates
     @Value("${app.email.defaults.service-name:PETSHOP}")
     private String defaultServiceName;
 
     @Value("${app.email.defaults.company-name:PETSHOP Inc.}")
     private String defaultCompanyName;
 
-    @Value("${app.email.defaults.login-link:#}") // Link trang login
+    @Value("${app.email.defaults.login-link:#}")
     private String defaultLoginLink;
 
-    @Value("${app.email.defaults.support-email:support@petshop.com}") // Email hỗ trợ
+    @Value("${app.email.defaults.support-email:support@petshop.com}")
     private String defaultSupportEmail;
 
-    @Value("${app.email.defaults.support-phone:1900 XXXX}") // Phone hỗ trợ
+    @Value("${app.email.defaults.support-phone:1900 XXXX}")
     private String defaultSupportPhone;
 
     private Lock getProductLock(Long productId) {
@@ -192,7 +190,7 @@ public class OrderServiceImpl implements OrderService {
 
         BigDecimal totalOrderAmount = BigDecimal.ZERO;
         List<ProductEntity> productsToUpdateStock = new ArrayList<>();
-        List<Map<String, Object>> orderItemsForEmail = new ArrayList<>(); // << Chuẩn bị list item cho email
+        List<Map<String, Object>> orderItemsForEmail = new ArrayList<>(); // Prepare list of items for email content
 
         for (CartItemResponse cartItem : cart.getItems()) {
             Long productId = cartItem.getProductId();
@@ -217,19 +215,19 @@ public class OrderServiceImpl implements OrderService {
                 orderItem.setProduct(product);
                 orderItem.setQuantity(quantityToOrder);
                 orderItem.setPriceAtOrder(product.getPrice());
-                BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(quantityToOrder)); // Tính subtotal
-                orderItem.setSubtotal(subtotal); // Lưu subtotal vào item
+                BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(quantityToOrder));
+                orderItem.setSubtotal(subtotal); // Store subtotal in the item
 
                 order.getOrderItems().add(orderItem);
-                totalOrderAmount = totalOrderAmount.add(subtotal); // Cộng dồn subtotal
+                totalOrderAmount = totalOrderAmount.add(subtotal); // Accumulate subtotal
 
-                // << THÊM ITEM VÀO LIST CHO EMAIL >>
+                // Add item details to the list for the confirmation email
                 Map<String, Object> itemMapForEmail = new HashMap<>();
-                itemMapForEmail.put("productName", product.getName()); // Key phải khớp template {{ item.productName }}
-                itemMapForEmail.put("productSku", product.getSku()); // Key phải khớp template {{ item.productSku }}
-                itemMapForEmail.put("quantity", quantityToOrder);    // Key phải khớp template {{ item.quantity }}
-                itemMapForEmail.put("subTotal", formatCurrency(subtotal)); // Key phải khớp template {{ item.subTotal }} - Format tiền tệ
-                // Lấy ảnh (nếu có)
+                itemMapForEmail.put("productName", product.getName()); // Key must match template: {{ item.productName }}
+                itemMapForEmail.put("productSku", product.getSku());   // Key must match template: {{ item.productSku }}
+                itemMapForEmail.put("quantity", quantityToOrder);      // Key must match template: {{ item.quantity }}
+                itemMapForEmail.put("subTotal", formatCurrency(subtotal)); // Key must match template: {{ item.subTotal }} - Formatted currency
+                // Get product image URL (if available)
                 String imageUrl = null;
                 List<String> imageUrls = product.getImageURLs();
                 if (imageUrls != null && !imageUrls.isEmpty()) {
@@ -237,7 +235,6 @@ public class OrderServiceImpl implements OrderService {
                 }
                 itemMapForEmail.put("productImageUrl", imageUrl != null ? imageUrl : "https://via.placeholder.com/70x70.png?text=N/A"); // {{ item.productImageUrl }}
                 orderItemsForEmail.add(itemMapForEmail);
-                // << KẾT THÚC THÊM ITEM CHO EMAIL >>
 
             } finally {
                 productLock.unlock();
@@ -258,15 +255,13 @@ public class OrderServiceImpl implements OrderService {
         log.info("Clearing cart for user ID: {}", userId);
         cartService.clearCart(userId);
 
-        // << GỌI HÀM GỬI EMAIL SAU KHI MỌI THỨ THÀNH CÔNG >>
-        sendOrderConfirmationEmail(savedOrder, orderItemsForEmail); // Truyền cả list item đã chuẩn bị
+        // Send confirmation email after everything is successful
+        sendOrderConfirmationEmail(savedOrder, orderItemsForEmail); // Pass the prepared item list
 
         return mapOrderToResponse(savedOrder);
     }
 
-    // << TÁCH RIÊNG HÀM GỬI MAIL >>
-    // << CÓ THỂ THÊM @Async Ở ĐÂY NẾU ĐÃ CẤU HÌNH >>
-    // @Async
+    // @Async // Uncomment if async email sending is configured
     public void sendOrderConfirmationEmail(OrderEntity order, List<Map<String, Object>> orderItemsForEmail) {
         try {
             log.info("Attempting to send order confirmation email for Order ID: {}", order.getId());
@@ -276,36 +271,35 @@ public class OrderServiceImpl implements OrderService {
                 return;
             }
 
-            // === Chuẩn bị Params ===
+            // Prepare parameters for the email template
             Map<String, Object> emailParams = new HashMap<>();
-            emailParams.put("customer_name", customer.getFirstName() != null ? customer.getFirstName() : customer.getUsername()); // {{ params.customer_name }}
-            emailParams.put("customer_email", customer.getEmail());               // {{ params.customer_email }}
-            emailParams.put("order_code", order.getOrderCode());                 // {{ params.order_code }}
-            emailParams.put("order_date", formatDate(order.getOrderDate()));     // {{ params.order_date }}
-            emailParams.put("total_amount", formatCurrency(order.getTotalAmount())); // {{ params.total_amount }}
-            emailParams.put("shipping_address", formatAddressForEmail(order.getShippingAddress())); // {{ params.shipping_address }}
-            emailParams.put("payment_method", order.getPaymentMethod().name());  // {{ params.payment_method }}
-            emailParams.put("order_items", orderItemsForEmail);                 // {{ params.order_items }} - List Map đã chuẩn bị
+            emailParams.put("customer_name", customer.getFirstName() != null ? customer.getFirstName() : customer.getUsername()); // Matches {{ params.customer_name }}
+            emailParams.put("customer_email", customer.getEmail());               // Matches {{ params.customer_email }}
+            emailParams.put("order_code", order.getOrderCode());                 // Matches {{ params.order_code }}
+            emailParams.put("order_date", formatDate(order.getOrderDate()));     // Matches {{ params.order_date }}
+            emailParams.put("total_amount", formatCurrency(order.getTotalAmount())); // Matches {{ params.total_amount }}
+            emailParams.put("shipping_address", formatAddressForEmail(order.getShippingAddress())); // Matches {{ params.shipping_address }}
+            emailParams.put("payment_method", order.getPaymentMethod().name());  // Matches {{ params.payment_method }}
+            emailParams.put("order_items", orderItemsForEmail);                 // Matches {{ params.order_items }} - The prepared list of maps
 
-            // Các tham số mặc định/link khác
-            emailParams.put("service_name", defaultServiceName); // {{ params.service_name }}
-            emailParams.put("company_name", defaultCompanyName); // {{ params.company_name }}
-            emailParams.put("company_address", "Địa chỉ PETSHOP của anh"); // {{ params.company_address }} - Thay bằng địa chỉ thật
-            emailParams.put("support_email", defaultSupportEmail); // {{ params.support_email }}
-            emailParams.put("support_phone", defaultSupportPhone); // {{ params.support_phone }}
-            // Thay bằng các link thật của anh
-            emailParams.put("shop_link", "http://localhost:5173"); // {{ params.shop_link }}
-            emailParams.put("policy_link", "http://localhost:5173/policy"); // {{ params.policy_link }}
-            emailParams.put("contact_link", "http://localhost:5173/contact"); // {{ params.contact_link }}
-            emailParams.put("view_order_link", "http://localhost:5173/my-orders/" + order.getId()); // {{ params.view_order_link }}
-            emailParams.put("track_order_link", "#"); // {{ params.track_order_link }} - Thay bằng link thật nếu có
-            emailParams.put("unsubscribe_link", "#"); // {{ params.unsubscribe_link }} - Thay bằng link thật nếu có
+            // Add default/other parameters (replace placeholders with actual values/links)
+            emailParams.put("service_name", defaultServiceName); // Matches {{ params.service_name }}
+            emailParams.put("company_name", defaultCompanyName); // Matches {{ params.company_name }}
+            emailParams.put("company_address", "Your PETSHOP Address"); // Matches {{ params.company_address }} - Replace with actual address
+            emailParams.put("support_email", defaultSupportEmail); // Matches {{ params.support_email }}
+            emailParams.put("support_phone", defaultSupportPhone); // Matches {{ params.support_phone }}
+            // Replace with actual links
+            emailParams.put("shop_link", "http://localhost:5173"); // Matches {{ params.shop_link }}
+            emailParams.put("policy_link", "http://localhost:5173/policy"); // Matches {{ params.policy_link }}
+            emailParams.put("contact_link", "http://localhost:5173/contact"); // Matches {{ params.contact_link }}
+            emailParams.put("view_order_link", "http://localhost:5173/my-orders/" + order.getId()); // Matches {{ params.view_order_link }}
+            emailParams.put("track_order_link", "#"); // Matches {{ params.track_order_link }} - Replace with actual link if available
+            emailParams.put("unsubscribe_link", "#"); // Matches {{ params.unsubscribe_link }} - Replace with actual link if available
 
-            // === Lấy Template ID ===
-            // !! QUAN TRỌNG: THAY BẰNG ID THỰC TẾ CỦA TEMPLATE XÁC NHẬN ĐƠN HÀNG TRÊN BREVO !!
-            Long orderConfirmationTemplateId = 4L; // <<< ANH PHẢI THAY SỐ NÀY
+            // Get the Template ID (IMPORTANT: Replace with the actual Brevo template ID)
+            Long orderConfirmationTemplateId = 4L; // <<< Replace this number with your actual template ID
 
-            // === Gọi Service Gửi Mail ===
+            // Call the email service
             brevoEmailService.sendEmailWithTemplate(
                     customer.getEmail(),
                     orderConfirmationTemplateId,
@@ -314,13 +308,13 @@ public class OrderServiceImpl implements OrderService {
             log.info("Order confirmation email sent successfully to {} for Order ID {}", customer.getEmail(), order.getId());
 
         } catch (Exception e) {
-            // Chỉ log lỗi, không làm crash luồng chính
+            // Log the error but don't crash the main flow
             log.error("Failed to send order confirmation email for Order ID {}: {}", order.getId(), e.getMessage(), e);
-            // Có thể thêm cơ chế retry hoặc thông báo cho admin
+            // Consider adding retry mechanism or notifying admin
         }
     }
 
-    // << HÀM HELPER FORMAT ĐỊA CHỈ >>
+    // Helper method to format address for email
     private String formatAddressForEmail(AddressEntity address) {
         if (address == null) return "N/A";
         List<String> parts = new ArrayList<>();
@@ -329,28 +323,28 @@ public class OrderServiceImpl implements OrderService {
         if (address.getWard() != null && !address.getWard().isBlank()) parts.add(address.getWard());
         if (address.getDistrict() != null && !address.getDistrict().isBlank()) parts.add(address.getDistrict());
         if (address.getCity() != null && !address.getCity().isBlank()) parts.add(address.getCity());
-        // if (address.getCountry() != null && !address.getCountry().isBlank()) parts.add(address.getCountry());
+        // if (address.getCountry() != null && !address.getCountry().isBlank()) parts.add(address.getCountry()); // Optional: Add country
         return String.join(", ", parts);
     }
 
-    // << HÀM HELPER FORMAT TIỀN TỆ (VÍ DỤ VND) >>
+    // Helper method to format currency (Example: VND)
     private String formatCurrency(BigDecimal amount) {
         if (amount == null) return "0 ₫";
-        // Locale("vi", "VN") để format theo kiểu Việt Nam
+        // Use Locale("vi", "VN") for Vietnamese currency format
         NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(new Locale("vi", "VN"));
         return currencyFormatter.format(amount);
     }
 
-    // << HÀM HELPER FORMAT NGÀY THÁNG (VÍ DỤ dd/MM/yyyy) >>
+    // Helper method to format date (Example: dd/MM/yyyy HH:mm)
     private String formatDate(Date date) {
         if (date == null) return "N/A";
-        // Anh có thể chọn định dạng khác nếu muốn
+        // Choose a different format if desired
         SimpleDateFormat dateFormatter = new SimpleDateFormat("dd/MM/yyyy HH:mm");
         return dateFormatter.format(date);
     }
 
 
-    // --- Các phương thức khác (getOrdersByUserId, getOrderDetails, ...) giữ nguyên như trước ---
+    // --- Other Service Methods ---
     @Override
     @Transactional(readOnly = true)
     public Page<OrderResponse> getOrdersByUserId(Long userId, Pageable pageable) {
@@ -394,19 +388,19 @@ public class OrderServiceImpl implements OrderService {
         OrderEntity order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
 
-        OrderStatus oldStatus = order.getStatus(); // Lấy status cũ để kiểm tra nếu cần
+        OrderStatus oldStatus = order.getStatus(); // Get old status for logging/comparison
 
         if (oldStatus == newStatus) {
             log.warn("ADMIN: Order ID {} already has status {}. No update performed.", orderId, newStatus);
-            return mapOrderToResponse(order); // Không cần làm gì thêm
+            return mapOrderToResponse(order); // No action needed
         }
 
         log.info("Updating order {} status from {} to {}", order.getOrderCode(), oldStatus, newStatus);
         order.setStatus(newStatus);
-        OrderEntity updatedOrder = orderRepository.save(order); // Lưu trạng thái mới
+        OrderEntity updatedOrder = orderRepository.save(order); // Save the new status
 
-        // *** GỌI HÀM GỬI EMAIL THÔNG BÁO CẬP NHẬT TRẠNG THÁI ***
-        sendOrderStatusUpdateEmail(updatedOrder); // Gửi email sau khi đã lưu thành công
+        // Send status update notification email
+        sendOrderStatusUpdateEmail(updatedOrder); // Send email after successful save
 
         return mapOrderToResponse(updatedOrder);
     }
@@ -418,39 +412,39 @@ public class OrderServiceImpl implements OrderService {
                 return;
             }
 
-            // Lấy trạng thái mới dưới dạng text dễ hiểu
+            // Get the new status text for the email
             String newStatusText = mapOrderStatusToText(order.getStatus());
-            // Lấy thời gian cập nhật (tùy chọn)
+            // Optional: Get update time
             // LocalDateTime updateTime = LocalDateTime.now();
             // DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss dd/MM/yyyy");
             // String formattedUpdateTime = updateTime.format(formatter);
 
             log.info("Attempting to send order status update email for Order ID: {} to status '{}'", order.getId(), newStatusText);
 
-            // === Chuẩn bị Params ===
+            // Prepare parameters for the email template
             Map<String, Object> emailParams = new HashMap<>();
-            emailParams.put("customer_name", customer.getFirstName() != null ? customer.getFirstName() : customer.getUsername()); // {{ params.customer_name }}
-            emailParams.put("order_code", order.getOrderCode());             // {{ params.order_code }}
-            emailParams.put("new_status_text", newStatusText);             // {{ params.new_status_text }} - Trạng thái mới dạng text
-            emailParams.put("view_order_link", "http://localhost:5173/my-orders/" + order.getId()); // {{ params.view_order_link }} - Sửa lại link cho đúng
+            emailParams.put("customer_name", customer.getFirstName() != null ? customer.getFirstName() : customer.getUsername()); // Matches {{ params.customer_name }}
+            emailParams.put("order_code", order.getOrderCode());             // Matches {{ params.order_code }}
+            emailParams.put("new_status_text", newStatusText);             // Matches {{ params.new_status_text }} - New status text
+            emailParams.put("view_order_link", "http://localhost:5173/my-orders/" + order.getId()); // Matches {{ params.view_order_link }} - Adjust link as needed
 
-            // Các tham số mặc định/link khác (tùy chọn, có thể đã có trong template)
-            emailParams.put("service_name", defaultServiceName);        // {{ params.service_name }}
-            emailParams.put("company_name", defaultCompanyName);       // {{ params.company_name }}
-            emailParams.put("support_email", defaultSupportEmail);      // {{ params.support_email }}
-            emailParams.put("support_phone", defaultSupportPhone);      // {{ params.support_phone }}
-            // emailParams.put("update_time", formattedUpdateTime);      // {{ params.update_time }} - Nếu muốn thêm thời gian cập nhật
+            // Add default/other parameters (optional, might be in template)
+            emailParams.put("service_name", defaultServiceName);        // Matches {{ params.service_name }}
+            emailParams.put("company_name", defaultCompanyName);       // Matches {{ params.company_name }}
+            emailParams.put("support_email", defaultSupportEmail);      // Matches {{ params.support_email }}
+            emailParams.put("support_phone", defaultSupportPhone);      // Matches {{ params.support_phone }}
+            // emailParams.put("update_time", formattedUpdateTime);      // Matches {{ params.update_time }} - If adding update time
 
-            // === Gọi Service Gửi Mail ===
+            // Call the email service with the specific template ID for status updates
             brevoEmailService.sendEmailWithTemplate(
                     customer.getEmail(),
-                    7L, // ID của template mới
+                    7L, // ID of the status update template (Replace if different)
                     emailParams
             );
             log.info("Order status update email sent successfully to {} for Order ID {}", customer.getEmail(), order.getId());
 
         } catch (Exception e) {
-            // Chỉ log lỗi, không làm crash luồng chính
+            // Log the error but don't crash the main flow
             log.error("Failed to send order status update email for Order ID {}: {}", order.getId(), e.getMessage(), e);
         }
     }
@@ -466,7 +460,7 @@ public class OrderServiceImpl implements OrderService {
         }
         order.setStatus(OrderStatus.CANCELLED);
         OrderEntity cancelledOrder = orderRepository.save(order);
-        // << CÓ THỂ GỬI EMAIL THÔNG BÁO HỦY ĐƠN Ở ĐÂY >>
+        // Optional: Send order cancellation email here
         // sendOrderCancellationEmail(cancelledOrder);
         log.info("Order ID {} cancelled successfully by user ID {}", orderId, userId);
         return mapOrderToResponse(cancelledOrder);
@@ -477,7 +471,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private boolean restoreStockForOrder(OrderEntity order) {
-        // Giữ nguyên logic này
+        // Logic to restore stock when an order is cancelled
         log.info("Attempting to restore stock for cancelled order ID: {}", order.getId());
         try {
             for (OrderItemEntity item : order.getOrderItems()) {
@@ -503,15 +497,15 @@ public class OrderServiceImpl implements OrderService {
         }
     }
     private String mapOrderStatusToText(OrderStatus status) {
-        if (status == null) return "Không xác định";
+        if (status == null) return "Unknown";
         return switch (status) {
-            case PENDING -> "Chờ xác nhận";
-            case PROCESSING -> "Đang xử lý";
-            case SHIPPED -> "Đang giao hàng";
-            case DELIVERED -> "Đã giao thành công";
-            case CANCELLED -> "Đã hủy";
-            case RETURNED -> "Đã hoàn trả";
-            default -> status.name(); // Trả về tên enum nếu chưa định nghĩa text
+            case PENDING -> "Pending Confirmation";
+            case PROCESSING -> "Processing";
+            case SHIPPED -> "Shipped";
+            case DELIVERED -> "Delivered";
+            case CANCELLED -> "Cancelled";
+            case RETURNED -> "Returned";
+            default -> status.name(); // Fallback to enum name
         };
     }
 }

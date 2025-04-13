@@ -6,7 +6,7 @@ import com.backend.controller.request.UserPasswordRequest;
 import com.backend.controller.request.UserUpdateRequest;
 import com.backend.controller.response.UserResponse;
 import com.backend.exception.ResourceNotFoundException;
-import com.backend.model.UserEntity; // Giữ lại import này nếu getCurrentUserId dùng
+import com.backend.model.UserEntity;
 import com.backend.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

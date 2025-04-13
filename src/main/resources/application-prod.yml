@@ -12,8 +12,65 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  # Datasource configuration for production (should be overridden by env vars)
+  datasource:
+    url: ${DB_URL:jdbc:mysql://prod-db-host:3306/proddb?useSSL=true&serverTimezone=UTC} # Example production URL
+    username: ${DB_USERNAME} # No default username for prod
+    password: ${DB_PASSWORD} # No default password for prod
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  # Security configuration for production
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID} # No default client ID for prod
+            client-secret: ${GOOGLE_CLIENT_SECRET} # No default client secret for prod
+            scope:
+              - email
+              - profile
+
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
+
+# Brevo API Key for production
+brevo:
+  api-key: ${BREVO_API_KEY} # No default API key for prod
+  sender-email: ${BREVO_SENDER_EMAIL} # No default sender email for prod
+  sender-name: ${BREVO_SENDER_NAME}   # No default sender name for prod
+
+# Application specific configurations for production
+app:
+  base-url: ${APP_BASE_URL:https://your-production-domain.com} # Example production base URL
+  email:
+    verification-template-id: 3 # Or use ${APP_EMAIL_VERIFICATION_TEMPLATE_ID:3} if needed
+    defaults:
+      login-link: https://your-production-domain.com/login
+      service-name: Your Production App Name
+      company-name: Your Company Inc.
+      company-address: Your Company Address
+      support-phone: Your Support Phone
+      faq-link: https://your-production-domain.com/faq
+      policy-link: https://your-production-domain.com/policy
+      company-slogan: Your Company Slogan
+  frontend-url: ${APP_FRONTEND_URL:https://your-production-frontend.com} # Example production frontend URL
+  oauth2:
+    redirect-path: ${APP_OAUTH2_REDIRECT_PATH:/logincallback}
+
+# OpenAPI configuration for production (server URL should point to production)
+openapi:
+  service:
+    api-docs: backend-service # This is likely overridden by springdoc.api-docs.enabled=false
+    server: ${APP_BASE_URL:https://your-production-domain.com} # Use the same base URL variable
+    title: Backend service - Production
+    version: 1.0.0
+
+# JWT configuration for production
+jwt:
+  expiryMinutes: ${JWT_EXPIRY_MINUTES:60}
+  expiryDay: ${JWT_EXPIRY_DAYS:7}
+  accessKey: ${JWT_ACCESS_KEY} # No default access key for prod
+  refreshKey: ${JWT_REFRESH_KEY} # No default refresh key for prod

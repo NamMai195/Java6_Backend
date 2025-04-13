@@ -18,8 +18,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService; // Giữ lại import này
-import org.springframework.security.core.userdetails.UsernameNotFoundException; // Thêm import này để bắt lỗi
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -37,9 +37,8 @@ import static org.springframework.http.HttpHeaders.AUTHORIZATION;
 public class CustonmizeRequestFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    // SỬA: Inject implementation đúng của UserDetailsService
     private final UserDetailsService userDetailsService;
-    private final ObjectMapper objectMapper; // Giữ nguyên nếu ObjectMapper được cung cấp bởi Spring
+    private final ObjectMapper objectMapper; // Provided by Spring
 
     @Override
     protected void doFilterInternal(
@@ -58,22 +57,21 @@ public class CustonmizeRequestFilter extends OncePerRequestFilter {
 
             String username = null;
             try {
-                // Cố gắng lấy username ngay cả khi token hết hạn (nếu extractUsername trả về null hoặc username)
+                // Attempt to extract username even if token might be expired (depending on JwtService implementation)
                 username = jwtService.extractUsername(token, TokenType.ACCESS_TOKEN);
 
-                // Chỉ xử lý tiếp nếu có username và chưa có ai được xác thực trong context
+                // Process only if username is extracted and no authentication exists in the context yet
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                     log.debug("Username extracted from token: {}", username);
 
-                    // SỬA: Sử dụng trực tiếp userDetailsService đã inject
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                    // SỬA: Thêm userDetails vào lời gọi isTokenValid
+                    // Validate the token (checks expiration and signature) against the loaded UserDetails
                     if (jwtService.isTokenValid(token, TokenType.ACCESS_TOKEN, userDetails)) {
                         SecurityContext context = SecurityContextHolder.createEmptyContext();
                         UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                                 userDetails,
-                                null, // Credentials thường là null khi dùng token
+                                null, // Credentials are null for token-based auth
                                 userDetails.getAuthorities()
                         );
                         authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
@@ -81,52 +79,53 @@ public class CustonmizeRequestFilter extends OncePerRequestFilter {
                         SecurityContextHolder.setContext(context);
                         log.debug("User {} authenticated successfully via JWT.", username);
                     } else {
-                        // Token không hợp lệ mặc dù username có thể lấy được (ví dụ: hết hạn)
+                        // Token is invalid (e.g., expired) even though username was extractable
                         log.warn("JWT token is invalid or expired for user: {}", username);
-                        // Không ném lỗi ở đây, chỉ không xác thực
-                        // Nếu muốn trả lỗi ngay lập tức khi token hết hạn/không hợp lệ, bạn có thể gọi errorResponse
+                        // Do not throw an error here, just don't authenticate.
+                        // If immediate error response on invalid/expired token is desired, call errorResponse here.
                         // errorResponse(response, "Invalid or expired token");
                         // return;
                     }
                 } else if (username == null) {
                     log.warn("Could not extract username from JWT token.");
-                    // Có thể trả lỗi nếu token có nhưng không lấy được username
+                    // Optionally return an error if a token exists but username extraction fails
                     // errorResponse(response, "Invalid token: Cannot extract username");
                     // return;
                 } else {
+                    // Authentication already exists in the context
                     log.debug("Security context already contains authentication for: {}", SecurityContextHolder.getContext().getAuthentication().getName());
                 }
 
             } catch (AccessDeniedException e) {
-                // Lỗi này thường xảy ra nếu token không đúng signature hoặc hết hạn (tùy cách implement extractUsername)
+                // Typically occurs due to invalid signature or expiration (depending on JwtService)
                 log.warn("Access Denied while processing JWT token: {}", e.getMessage());
-                errorResponse(response, e.getMessage()); // Trả lỗi 403
-                return; // Dừng filter chain
+                errorResponse(response, e.getMessage()); // Return 403 Forbidden
+                return; // Stop filter chain
             } catch (UsernameNotFoundException e) {
-                // User có trong token nhưng không tìm thấy trong DB
+                // User exists in token but not found in the database
                 log.warn("User '{}' found in token but not in database.", username);
                 errorResponse(response, "User associated with token not found");
-                return; // Dừng filter chain
+                return; // Stop filter chain
             } catch (Exception e) {
-                // Các lỗi không mong muốn khác
+                // Catch other unexpected errors
                 log.error("Unexpected error during JWT filter processing for user '{}': {}", username, e.getMessage(), e);
                 errorResponse(response, "Authentication processing error");
-                return; // Dừng filter chain
+                return; // Stop filter chain
             }
         } else {
             log.debug("No JWT token found in Authorization header.");
         }
 
-        // Tiếp tục filter chain nếu không có lỗi hoặc không có token
+        // Continue the filter chain if no error occurred or no token was present
         filterChain.doFilter(request, response);
     }
 
-    // Phương thức errorResponse giữ nguyên
+    // Helper method to send an error response
     private void errorResponse(HttpServletResponse response, String message) throws IOException {
         ErrorResponse error = new ErrorResponse();
         error.setTimestamp(new Date());
-        error.setError("Forbidden"); // Hoặc "Unauthorized" tùy ngữ cảnh
-        error.setStatus(HttpServletResponse.SC_FORBIDDEN); // Hoặc SC_UNAUTHORIZED
+        error.setError("Forbidden"); // Or "Unauthorized" depending on context
+        error.setStatus(HttpServletResponse.SC_FORBIDDEN); // Or SC_UNAUTHORIZED
         error.setMessage(message);
 
         response.setStatus(error.getStatus());
@@ -134,7 +133,7 @@ public class CustonmizeRequestFilter extends OncePerRequestFilter {
         objectMapper.writeValue(response.getWriter(), error);
     }
 
-    // Inner class ErrorResponse giữ nguyên
+    // Inner class for standard error response structure
     @Setter
     @Getter
     private static class ErrorResponse {

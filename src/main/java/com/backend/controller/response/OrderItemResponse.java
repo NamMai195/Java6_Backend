@@ -10,13 +10,12 @@ import java.math.BigDecimal;
 @Setter
 @Builder
 public class OrderItemResponse {
-    private Long orderItemId; // ID của OrderItemEntity
+    private Long orderItemId;
     private Long productId;
     private String productName;
-    private String productSku; // Thêm Sku để dễ nhận biết
-    private BigDecimal priceAtOrder; // Giá tại thời điểm đặt hàng
+    private String productSku;
+    private BigDecimal priceAtOrder;
     private Integer quantity;
-    private BigDecimal subTotal; // quantity * priceAtOrder
+    private BigDecimal subTotal;
     private String productImageUrl;
-    // Có thể thêm imageUrl nếu cần
 }

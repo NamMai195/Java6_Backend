@@ -8,30 +8,28 @@ import lombok.Setter;
 import java.io.Serializable;
 
 @Getter
-@Setter // Thêm Setter nếu cần thiết, ví dụ cho binding từ request body
+@Setter // Added Setter for request body binding if needed
 public class SetInitialPasswordRequest implements Serializable {
 
-    // Chọn MỘT trong hai: token hoặc email để xác định người dùng
-    // Tùy thuộc vào cách bạn triển khai logic trong service
-    // Ví dụ: Dùng token nếu bước verify và set password là riêng biệt
+    // Use token to identify the user for setting the initial password
     @NotBlank(message = "Token cannot be blank")
     private String token;
 
-    // Hoặc dùng email nếu bạn muốn người dùng nhập email của họ
+    // Email alternative commented out, assuming token-based flow
     // @NotBlank(message = "Email cannot be blank")
     // @jakarta.validation.constraints.Email(message = "Invalid email format")
     // private String email;
 
     @NotBlank(message = "Password is required")
-    @Size(min = 8, message = "Password must be at least 8 characters long") // Thêm ràng buộc độ dài nếu muốn
+    @Size(min = 8, message = "Password must be at least 8 characters long") // Optional: Add length constraint
     private String password;
 
     @NotBlank(message = "Confirm Password is required")
     private String confirmPassword;
 
-    // Phương thức helper để lấy định danh (tùy chọn, dựa vào cách bạn dùng ở Controller/Service)
+    // Helper method to get the identifier (token in this case)
     public String getEmailOrToken() {
-        // if (email != null) return email;
-        return token; // Trả về token nếu dùng token
+        // if (email != null) return email; // Keep commented if using token
+        return token; // Return token as the identifier
     }
 }
