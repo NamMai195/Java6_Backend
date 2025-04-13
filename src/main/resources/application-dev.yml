@@ -8,25 +8,30 @@ spring:
     database-platform: org.hibernate.dialect.MySQLDialect
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: true # Bật show-sql cho phát triển
     properties:
       hibernate:
         format_sql: true
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/testdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:password}
+    url: jdbc:mysql://localhost:3306/testdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    # Đọc mật khẩu từ biến môi trường SPRING_DATASOURCE_PASSWORD
+    password: ${SPRING_DATASOURCE_PASSWORD:password} # Có thể để giá trị mặc định là 'password' nếu biến môi trường không có, nhưng tốt nhất là không nên.
     driver-class-name: com.mysql.cj.jdbc.Driver
+  # --- Cấu hình OAuth2 Client ---
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: ${GOOGLE_CLIENT_ID} # No default value
-            client-secret: ${GOOGLE_CLIENT_SECRET} # No default value
+            # Đọc client-id từ biến môi trường GOOGLE_CLIENT_ID
+            client-id: ${GOOGLE_CLIENT_ID}
+            # Đọc client-secret từ biến môi trường GOOGLE_CLIENT_SECRET
+            client-secret: ${GOOGLE_CLIENT_SECRET}
             scope:
               - email
               - profile
+  # --- Kết thúc cấu hình OAuth2 Client ---
 
 springdoc:
   api-docs:
@@ -34,13 +39,12 @@ springdoc:
   swagger-ui:
     enabled: true
 brevo:
-  api-key: ${BREVO_API_KEY} # No default value
-  sender-email: ${BREVO_SENDER_EMAIL:mnam3239@gmail.com} # Default sender email is likely okay
-  sender-name: ${BREVO_SENDER_NAME:Nam Mai}           # Default sender name is likely okay
+  # Đọc api-key từ biến môi trường BREVO_API_KEY
+  api-key: ${BREVO_API_KEY}
 app:
-  base-url: ${APP_BASE_URL:http://localhost:8080}
+  base-url: http://localhost:8080
   email:
-    verification-template-id: 3 # Consider externalizing if it changes often
+    verification-template-id: 3
     defaults:
       login-link: https://my-app.com/login
       service-name: My Application
@@ -51,20 +55,25 @@ app:
       policy-link: https://my-app.com/policy
       company-slogan: Innovating the Future
 
-  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173} # URL gốc của Frontend (Vue.js)
+  # << Cấu hình OAuth2 Redirect >>
+  frontend-url: http://localhost:5173 # URL gốc của Frontend (Vue.js)
   oauth2:
-    redirect-path: ${APP_OAUTH2_REDIRECT_PATH:/logincallback} # Path trên frontend để xử lý token sau khi redirect
+    redirect-path: /logincallback # Path trên frontend để xử lý token sau khi redirect
+  # << Kết thúc >>
 
 openapi:
   service:
     api-docs: backend-service
-    server: ${APP_BASE_URL:http://localhost:8080} # Use the same base URL variable
+    server: http://localhost:${server.port}
     title: Backend service
     version: 1.0.0
 
+# --- Cấu hình JWT ---
 jwt:
-  expiryMinutes: ${JWT_EXPIRY_MINUTES:60}
-  expiryDay: ${JWT_EXPIRY_DAYS:7}
-  # Remove default keys as they might be flagged too, generate unique ones per environment
-  accessKey: ${JWT_ACCESS_KEY} # No default value
-  refreshKey: ${JWT_REFRESH_KEY} # No default value
+  expiryMinutes: 60
+  expiryDay: 7
+  # Đọc accessKey từ biến môi trường JWT_ACCESS_KEY
+  accessKey: ${JWT_ACCESS_KEY}
+  # Đọc refreshKey từ biến môi trường JWT_REFRESH_KEY
+  refreshKey: ${JWT_REFRESH_KEY}
+# --- Kết thúc cấu hình JWT ---
