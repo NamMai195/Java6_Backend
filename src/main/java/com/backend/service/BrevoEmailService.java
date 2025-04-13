@@ -12,7 +12,6 @@ import sibModel.SendSmtpEmail;
 import sibModel.SendSmtpEmailSender;
 import sibModel.SendSmtpEmailTo;
 
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,27 +20,30 @@ import java.util.Map;
 @Slf4j(topic = "BREVO-EMAIL-SERVICE")
 public class BrevoEmailService {
 
-    @Value("${brevo.api-key}")
+    // Sửa lại placeholder để khớp với tên biến trong .env
+    @Value("${BREVO_API_KEY}")
     private String apiKey;
 
-    @Value("${brevo.sender-email}")
+    // Sửa lại placeholder để khớp với tên biến trong .env (Fix lỗi trước đó)
+    @Value("${BREVO_SENDER_EMAIL}")
     private String senderEmail;
 
-    @Value("${brevo.sender-name}")
+    // Sửa lại placeholder để khớp với tên biến trong .env
+    @Value("${BREVO_SENDER_NAME}")
     private String senderName;
 
     public void sendEmail(String toEmail, String subject, String content) throws ApiException {
         log.info("Attempting to send plain email to {} with subject '{}'", toEmail, subject);
         ApiClient defaultClient = Configuration.getDefaultApiClient();
         ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("api-key");
-        apiKeyAuth.setApiKey(apiKey);
+        apiKeyAuth.setApiKey(apiKey); // Sử dụng apiKey đã được inject
 
         TransactionalEmailsApi apiInstance = new TransactionalEmailsApi();
         SendSmtpEmail sendSmtpEmail = new SendSmtpEmail();
 
         SendSmtpEmailSender sender = new SendSmtpEmailSender();
-        sender.setEmail(senderEmail); // Use configured sender email
-        sender.setName(senderName);   // Use configured sender name
+        sender.setEmail(senderEmail); // Sử dụng senderEmail đã được inject
+        sender.setName(senderName);   // Sử dụng senderName đã được inject
         sendSmtpEmail.setSender(sender);
 
         List<SendSmtpEmailTo> to = new ArrayList<>();
@@ -67,14 +69,14 @@ public class BrevoEmailService {
         log.info("Attempting to send template email (ID: {}) to {} with params: {}", templateId, toEmail, params);
         ApiClient defaultClient = Configuration.getDefaultApiClient();
         ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("api-key");
-        apiKeyAuth.setApiKey(apiKey);
+        apiKeyAuth.setApiKey(apiKey); // Sử dụng apiKey đã được inject
 
         TransactionalEmailsApi apiInstance = new TransactionalEmailsApi();
         SendSmtpEmail sendSmtpEmail = new SendSmtpEmail();
 
         SendSmtpEmailSender sender = new SendSmtpEmailSender();
-        sender.setEmail(senderEmail); // Use configured sender email
-        sender.setName(senderName);   // Use configured sender name
+        sender.setEmail(senderEmail); // Sử dụng senderEmail đã được inject
+        sender.setName(senderName);   // Sử dụng senderName đã được inject
         sendSmtpEmail.setSender(sender);
 
         // Recipient info
@@ -101,5 +103,4 @@ public class BrevoEmailService {
             throw e; // Re-throw for the calling layer to handle
         }
     }
-
 }
