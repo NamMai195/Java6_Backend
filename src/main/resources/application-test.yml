@@ -1,17 +1,27 @@
 spring:
   config:
     activate:
-      on-profile: test
-  devtools:
-    add-properties: true
+      on-profile: test # Kích hoạt cấu hình này khi profile 'test' chạy
+  # Thêm cấu hình datasource cho H2
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1 # URL cho H2 in-memory, DB_CLOSE_DELAY giữ DB tồn tại
+    driverClassName: org.h2.Driver           # Driver class của H2
+    username: sa                             # Username mặc định của H2
+    password:                                # Password mặc định (rỗng)
   jpa:
-    database-platform: org.hibernate.dialect.H2Dialect
+    database-platform: org.hibernate.dialect.H2Dialect # Dialect cho H2
     hibernate:
-      ddl-auto: update
-    show-sql: false
+      # Đổi thành create-drop để tạo mới DB mỗi lần test chạy, đảm bảo sạch sẽ
+      ddl-auto: create-drop
+    show-sql: false # Giữ nguyên hoặc đổi thành true nếu muốn xem log SQL
     properties:
       hibernate:
-        format_sql: true
+        format_sql: true # Định dạng log SQL nếu show-sql là true
+  # Devtools thường không cần thiết trong CI, nhưng giữ lại nếu bạn có lý do
+  devtools:
+    add-properties: true
+
+# Giữ nguyên cấu hình Springdoc/OpenAPI của bạn
 springdoc:
   api-docs:
     enabled: true
