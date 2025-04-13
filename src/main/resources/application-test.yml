@@ -84,5 +84,6 @@ GOOGLE_CLIENT_ID: dummy-google-client-id # Giá trị giả cho placeholder tr�
 GOOGLE_CLIENT_SECRET: dummy-google-client-secret # Giá trị giả cho placeholder trực tiếp
 JWT_ACCESS_KEY: ZXhhbXBsZS1zZWNyZXQtYWNjZXNzLWtleS1mb3Itand0LXNwcmluZ2Jvb3QxMjM0NTY3ODkw # Giá trị giả cho placeholder trực tiếp
 JWT_REFRESH_KEY: ZXhhbXBsZS1zZWNyZXQtcmVmcmVzaC1rZXktZm9yLWp3dC1zcHJpbmdib290MTIzNDU2Nzg5MA== # Giá trị giả cho placeholder trực tiếp
-# SPRING_DATASOURCE_PASSWORD: # Thường không cần vì dùng H2 với password rỗng, nhưng có thể thêm nếu cần
+# SPRING_DATASOURCE_PASSWORD:
 BREVO_SENDER_EMAIL: dummy-sender@test.com # Giá trị giả cho placeholder trực tiếp
+BREVO_SENDER_NAME: "Test Sender Name" # <<<<<<< THÊM DÒNG NÀY
