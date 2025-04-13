@@ -1,0 +1,37 @@
+# Tên workflow: Build và test project Java với Maven
+name: Java CI with Maven
+
+# Kích hoạt workflow khi push hoặc pull request vào nhánh master
+on:
+  push:
+    branches: [ "master" ] # Đảm bảo đây là nhánh chính của bạn (có thể là main)
+  pull_request:
+    branches: [ "master" ] # Đảm bảo đây là nhánh chính của bạn
+
+jobs:
+  build:
+    # Chạy trên môi trường Ubuntu mới nhất
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout code từ repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Cài đặt JDK 17 (Temurin) và cấu hình cache cho Maven
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # Step 3: Build project bằng Maven (bao gồm cả chạy test)
+      # Lệnh 'package' sẽ tự động chạy các phase trước đó, bao gồm 'test'
+      - name: Build with Maven
+        run: mvn -B package --file pom.xml
+
+      # Step 4 (Optional): Gửi dependency graph lên GitHub cho Dependabot
+      # Sử dụng tag v4 thay vì commit hash cụ thể để dễ cập nhật hơn
+      - name: Update dependency graph
+        uses: advanced-security/maven-dependency-submission-action@v4
