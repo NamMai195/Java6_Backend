@@ -15,36 +15,32 @@ spring:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: create-drop # Tạo và xóa schema mỗi lần test
-    show-sql: false # Tắt log SQL cho gọn (có thể bật nếu cần debug)
+    show-sql: false
     properties:
       hibernate:
         format_sql: true
 
-  # --- Cấu hình OAuth2 Client Giả Lập ---
+  # --- Cấu hình OAuth2 Client Giả Lập (Giữ cấu trúc chuẩn) ---
   security:
     oauth2:
       client:
         registration:
           google:
-            client-id: dummy-google-client-id # Giá trị giả
-            client-secret: dummy-google-client-secret # Giá trị giả
+            client-id: dummy-google-client-id
+            client-secret: dummy-google-client-secret
             scope:
               - email
               - profile
 
-  # --- Devtools (Thường không cần trong CI) ---
-  # devtools:
-  #   add-properties: true # Có thể bỏ comment nếu bạn thực sự cần
-
-# --- Cấu hình Brevo Giả Lập ---
+# --- Cấu hình Brevo Giả Lập (Giữ cấu trúc chuẩn) ---
 brevo:
-  api-key: dummy-brevo-api-key # Giá trị giả
+  api-key: dummy-brevo-api-key
 
-# --- Cấu hình App cho Test ---
+# --- Cấu hình App cho Test (Giữ cấu trúc chuẩn) ---
 app:
-  base-url: http://localhost:8080 # Giá trị test
+  base-url: http://localhost:8080
   email:
-    verification-template-id: 1 # Giá trị test
+    verification-template-id: 1
     defaults:
       login-link: https://dummy-test.com/login
       service-name: Test Application
@@ -54,29 +50,38 @@ app:
       faq-link: https://dummy-test.com/faq
       policy-link: https://dummy-test.com/policy
       company-slogan: Testing Rocks
-  frontend-url: http://localhost:9999 # Giá trị test
+  frontend-url: http://localhost:9999
   oauth2:
-    redirect-path: /testcallback # Giá trị test
+    redirect-path: /testcallback
 
-# --- Cấu hình JWT Giả Lập ---
+# --- Cấu hình JWT Giả Lập (Giữ cấu trúc chuẩn) ---
 jwt:
-  expiryMinutes: 60 # Giá trị test
-  expiryDay: 7 # Giá trị test
-  accessKey: ZXhhbXBsZS1zZWNyZXQtYWNjZXNzLWtleS1mb3Itand0LXNwcmluZ2Jvb3QxMjM0NTY3ODkw # Key giả đủ dài và hợp lệ (Base64 encoded string)
-  refreshKey: ZXhhbXBsZS1zZWNyZXQtcmVmcmVzaC1rZXktZm9yLWp3dC1zcHJpbmdib290MTIzNDU2Nzg5MA== # Key giả đủ dài và hợp lệ (Base64 encoded string)
+  expiryMinutes: 60
+  expiryDay: 7
+  accessKey: ZXhhbXBsZS1zZWNyZXQtYWNjZXNzLWtleS1mb3Itand0LXNwcmluZ2Jvb3QxMjM0NTY3ODkw
+  refreshKey: ZXhhbXBsZS1zZWNyZXQtcmVmcmVzaC1rZXktZm9yLWp3dC1zcHJpbmdib290MTIzNDU2Nzg5MA==
 
 # --- Cấu hình Springdoc/OpenAPI cho Test ---
-# Bạn có thể disable nếu muốn test chạy nhanh hơn
 springdoc:
   api-docs:
-    enabled: true # Hoặc false
+    enabled: true
   swagger-ui:
-    enabled: true # Hoặc false
+    enabled: true
 
 openapi:
   service:
-    api-docs: backend-service-test # Tên phân biệt cho test
-    # Cung cấp giá trị mặc định nếu biến môi trường không có trong CI/test
+    api-docs: backend-service-test
     server: ${BACKEND_SERVICE:http://localhost:8080}
     title: Backend service (Test)
     version: 1.0.0
+
+# --- THÊM MỚI: Định nghĩa trực tiếp các placeholder cho @Value("${...}") ---
+# Mục đích: Cung cấp giá trị nếu code dùng trực tiếp tên biến môi trường
+# Lưu ý: Nên sửa code để dùng đường dẫn property (ví dụ ${brevo.api-key}) thay vì cách này.
+
+BREVO_API_KEY: dummy-brevo-api-key # Giá trị giả cho placeholder trực tiếp
+GOOGLE_CLIENT_ID: dummy-google-client-id # Giá trị giả cho placeholder trực tiếp
+GOOGLE_CLIENT_SECRET: dummy-google-client-secret # Giá trị giả cho placeholder trực tiếp
+JWT_ACCESS_KEY: ZXhhbXBsZS1zZWNyZXQtYWNjZXNzLWtleS1mb3Itand0LXNwcmluZ2Jvb3QxMjM0NTY3ODkw # Giá trị giả cho placeholder trực tiếp
+JWT_REFRESH_KEY: ZXhhbXBsZS1zZWNyZXQtcmVmcmVzaC1rZXktZm9yLWp3dC1zcHJpbmdib290MTIzNDU2Nzg5MA== # Giá trị giả cho placeholder trực tiếp
+# SPRING_DATASOURCE_PASSWORD: # Thường không cần vì dùng H2 với password rỗng, nhưng có thể thêm nếu cần
