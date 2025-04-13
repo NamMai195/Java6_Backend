@@ -1,15 +1,18 @@
 # Tên workflow: Build và test project Java với Maven
 name: Java CI with Maven
 
-# Kích hoạt workflow khi push hoặc pull request vào nhánh master
 on:
   push:
-    branches: [ "master" ] # Đảm bảo đây là nhánh chính của bạn (có thể là main)
+    branches: [ "master" ]
   pull_request:
-    branches: [ "master" ] # Đảm bảo đây là nhánh chính của bạn
+    branches: [ "master" ]
 
 jobs:
   build:
+    # <<<< THÊM KHỐI PERMISSIONS Ở ĐÂY >>>>
+    permissions:
+      contents: write # Cấp quyền ghi để action dependency submission hoạt động
+
     # Chạy trên môi trường Ubuntu mới nhất
     runs-on: ubuntu-latest
 
@@ -27,8 +30,6 @@ jobs:
           cache: maven
 
       # Step 3: Build project bằng Maven và kích hoạt profile 'test'
-      # Lệnh 'package' sẽ chạy test sử dụng cấu hình trong application-test.properties/yml
-      # **YÊU CẦU:** Project cần có file application-test.properties (hoặc .yml) trong src/test/resources và cấu hình H2.
       - name: Build with Maven using 'test' profile
         run: mvn -B package -Dspring.profiles.active=test --file pom.xml
 
