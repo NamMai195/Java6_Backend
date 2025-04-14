@@ -13,10 +13,9 @@ spring:
       hibernate:
         format_sql: true
   datasource:
-    url: jdbc:mysql://localhost:3306/testdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
-    username: root
-    # Đọc mật khẩu từ biến môi trường SPRING_DATASOURCE_PASSWORD
-    password: ${SPRING_DATASOURCE_PASSWORD:password} # Có thể để giá trị mặc định là 'password' nếu biến môi trường không có, nhưng tốt nhất là không nên.
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD} # Giữ nguyên cách đọc password này là đúng rồi
     driver-class-name: com.mysql.cj.jdbc.Driver
   # --- Cấu hình OAuth2 Client ---
   security:
