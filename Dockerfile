@@ -32,4 +32,4 @@ COPY --from=builder /app/target/*.jar backend-service-stm.jar
 EXPOSE 8080
 
 # Lệnh để khởi chạy ứng dụng khi container bắt đầu
-ENTRYPOINT ["java", "-jar", "backend-service-stm.jar"]
+ENTRYPOINT ["java", "-Xms128m", "-Xmx350m", "-jar", "backend-service-stm.jar"]
